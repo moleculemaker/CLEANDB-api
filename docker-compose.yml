@@ -1,0 +1,19 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - CLEAN_DB_USER=${CLEAN_DB_USER:-mmli}
+      - CLEAN_DB_PASSWORD=${CLEAN_DB_PASSWORD:-mmli}
+      - CLEAN_DB_HOST=${CLEAN_DB_HOST:-localhost}
+      - CLEAN_DB_PORT=${CLEAN_DB_PORT:-5433}
+      - CLEAN_DB_NAME=${CLEAN_DB_NAME:-mmlidb}
+    restart: unless-stopped
+    volumes:
+      - ./app:/app/app # For development purposes
+
+volumes:
+  postgres_data:
