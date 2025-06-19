@@ -19,37 +19,34 @@ def parse_query_params(
     # String filters
     accession: Optional[List[str]] = Query(
         None,
-        description="The Enzyme Commission Number filter with wildcard support (e.g., '1.1.%'), describing the type of reaction that is catalyzed by this enzyme.",
-    ),
-    protein_name: Optional[List[str]] = Query(
-        None,
-        description="The substrate (chemical compound) that is one of the reactants of the enzymatic reaction in question",
+        description="Uniprot Accession",
     ),
     organism: Optional[List[str]] = Query(
         None,
-        description="The organism (e.g. human, horse) in which the data for the enzymatic reaction was measured",
+        description="Organism Name",
+    ),
+    protein_name: Optional[List[str]] = Query(
+        None,
+        description="Protein Name",
     ),
     gene_name: Optional[List[str]] = Query(
         None,
-        description="The unique accession number/identifier from the Uniprot database for the enzyme catalyzing the reaction",
+        description="Gene Name"
     ),
     ec_number: Optional[List[str]] = Query(
         None,
-        description='Whether the enzyme catalyzing the reaction is "wild-type" (unmutated) or a mutant enzyme',
+        description="CLEAN_EC"
     ),
     # Additional filters
     ec_confidence: Optional[float] = Query(
-        None, description="SMILES representation of the substrate chemical structure"
+        None, description="EC_Class"
     ),
-    sequence_length: Optional[int] = Query(
-        None, description="SMILES representation of the substrate chemical structure"
+    sequence_length: Optional[str] = Query(
+        None, description="Amino Acids"
     ),
     # Response format and pagination
     format: ResponseFormat = Query(
         default=ResponseFormat.JSON, description="Response format (json or csv)"
-    ),
-    columns: Optional[List[str]] = Query(
-        None, description="Columns to include in the response"
     ),
     limit: Optional[int] = Query(
         None, description="Maximum number of records to return"
@@ -71,7 +68,6 @@ def parse_query_params(
             ec_confidence = ec_confidence,
             sequence_length = sequence_length,
             format=format,
-            columns=columns,
             limit=limit,
             offset=offset,
         )

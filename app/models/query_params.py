@@ -23,27 +23,27 @@ class CLEANSearchQueryParams(BaseModel):
     # String filters (exact match, case-insensitive, multiple values with OR logic)
     accession: Optional[List[str]] = Field(
         None,
-        description="The unique accession number/identifier from the Uniprot database: https://www.uniprot.org/ for the enzyme catalyzing the reaction in question",
-    )
-    protein_name: Optional[List[str]] = Field(
-        None,
-        description='Whether the enzyme catalyzing the reaction is "wild-type" (unmutated) or a mutant enzyme.',
+        description="Uniprot Accession",
     )
     organism: Optional[List[str]] = Field(
         None,
-        description="The pH at which the data for the enzyme catalyzed reaction was collected.",
+        description="Organism Name",
+    )
+    protein_name: Optional[List[str]] = Field(
+        None,
+        description="Protein Name",
     )
     gene_name: Optional[List[str]] = Field(
-        None, description="The unit of measurement for the kcat value"
+        None, description="Gene Name"
     )
     ec_number: Optional[List[str]] = Field(
-        None, description="The unit of measurement for the kcat value"
+        None, description="CLEAN_EC"
     )
     ec_confidence: Optional[float] = Field(
-        None, description="The unit of measurement for the kcat value"
+        None, description="EC_Class"
     )
-    sequence_length: Optional[int] = Field(
-        None, description="The unit of measurement for the kcat value"
+    sequence_length: Optional[str] = Field(
+        None, description="Amino Acids"
     )
 
     # Numeric range filters (removed as requested)
@@ -53,9 +53,6 @@ class CLEANSearchQueryParams(BaseModel):
     # Response format and pagination
     format: Optional[ResponseFormat] = Field(
         ResponseFormat.JSON, description="Response format (json or csv)"
-    )
-    columns: Optional[List[str]] = Field(
-        None, description="Columns to include in the response"
     )
     limit: Optional[int] = Field(
         None, description="Maximum number of records to return"

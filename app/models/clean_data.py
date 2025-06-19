@@ -25,45 +25,45 @@ class CLEANDataBase(BaseModel):
 
     predictions_uniprot_annot_id: Optional[str] = Field(
         None,
-        description="The Enzyme Commission Number, describing the type of reaction that is catalyzed by this enzyme. For examples of the EC Number hierarchy, please see the Open Enzyme Database Home Page, Statistics View.",
+        description="",
     )
     uniprot_id: Optional[str] = Field(
         None,
-        description="The substrate (chemical compound) that is one of the reactants of the enzymatic reaction in question",
+        description="",
     )
     curation_status: Optional[str] = Field(
         None,
-        description="The organism (e.g. human, horse) in which the data for the enzymatic reaction was measured",
+        description="",
     )
     accession: Optional[str] = Field(
         None,
-        description="The unique accession number/identifier from the Uniprot database: https://www.uniprot.org/ for the enzyme catalyzing the reaction in question",
+        description="",
     )
     protein_name: Optional[str] = Field(
         None,
-        description='Whether the enzyme catalyzing the reaction is "wild-type" (unmutated) or a mutant enzyme.',
+        description='',
     )
     organism: Optional[float] = Field(
         None,
-        description="The pH at which the data for the enzyme catalyzed reaction was collected.",
+        description="",
     )
     ncbi_taxid: Optional[float] = Field(
         None,
-        description="The temperature (in degrees Celsius) at which the data for the enzyme catalyzed reaction was collected.",
+        description="",
     )
     amino_acids: Optional[str] = Field(
-        None, description="SMILES representation of the substrate chemical structure"
+        None, description=""
     )
     protein_sequence: Optional[float] = Field(
         None,
-        description="The Michaelis-Menten catalytic rate constant (kcat) that was measured for the enzymatic reaction.",
+        description="",
     )
     enzyme_function: Optional[float] = Field(
         None,
-        description="The PubMed Identifier (https://pubmed.ncbi.nlm.nih.gov/) for the experimental details from which the kcat data was collected.",
+        description="",
     )
     gene_name: Optional[str] = Field(
-        None, description="The unit of measurement for the kcat value"
+        None, description=""
     )
     clean_ec_number_array: Optional[List[str]] = Field(
         None,

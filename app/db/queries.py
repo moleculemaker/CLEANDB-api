@@ -70,6 +70,11 @@ async def build_base_conditions(
             if column_conditions:
                 conditions.append(f"({' OR '.join(column_conditions)})")
 
+    if params.sequence_length is not None:
+        param_idx += 1
+        param_name = f"param_{param_idx}"
+        conditions.append(f"amino_acids < ${param_idx}")
+        query_params[param_name] = params.sequence_length
     # Combine all conditions with AND logic
     where_clause = " AND ".join(conditions) if conditions else "TRUE"
 
