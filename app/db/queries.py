@@ -94,7 +94,8 @@ def get_query(columns_to_select: str, ec_where_clause: str, base_where_clause: s
         SELECT
             predictions_uniprot_annot_id,
             array_agg(clean_ec_number) AS clean_ec_number_array,
-            array_agg(clean_ec_confidence) AS clean_ec_confidence_array
+            array_agg(clean_ec_confidence) AS clean_ec_confidence_array,
+            max(clean_ec_confidence) AS max_clean_ec_confidence
         FROM filtered_clean_ec
         GROUP BY predictions_uniprot_annot_id
     ),
@@ -115,6 +116,7 @@ def get_query(columns_to_select: str, ec_where_clause: str, base_where_clause: s
     LEFT JOIN annot_ec_aggregated aea
         ON aea.predictions_uniprot_annot_id = pua.predictions_uniprot_annot_id
     WHERE {base_where_clause}
+    ORDER BY ca.max_clean_ec_confidence DESC
     """
 
 async def get_filtered_data(
