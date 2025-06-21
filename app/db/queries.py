@@ -61,7 +61,11 @@ async def build_base_conditions(
                 param_idx += 1
                 param_name = f"param_{param_idx}"
 
-                column_conditions.append(f"LOWER({column}) = LOWER(${param_idx})")
+                if column == "accession":
+                    # accessions are stored and indexed in uppercase
+                    column_conditions.append(f"{column} = UPPER(${param_idx})")
+                else:
+                    column_conditions.append(f"LOWER({column}) = LOWER(${param_idx})")
                 query_params[param_name] = value
 
 
@@ -184,8 +188,9 @@ async def get_typeahead_suggestions(db: Database, params: CLEANTypeaheadQueryPar
 
     if params.field_name == 'accession':
         # match the beginning of the string
+        # accessions are stored and indexed in uppercase
         search += '%'
-        query = f"""SELECT DISTINCT accession FROM cleandb.predictions_uniprot_annot WHERE LOWER(accession) LIKE LOWER($1) ORDER BY 1 ASC"""
+        query = f"""SELECT DISTINCT accession FROM cleandb.predictions_uniprot_annot WHERE accession LIKE UPPER($1) ORDER BY 1 ASC"""
     elif params.field_name == 'organism':
         search = '%' + search + '%'
         # match any part of the string
