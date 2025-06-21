@@ -216,7 +216,7 @@ async def get_ec_suggestions(db: Database, params: CLEANECLookupQueryParams
     number_search = search + '%'
     # match names anywhere in the string
     name_search = '%' + search + '%'
-    query = f"""SELECT ec_number, ec_name FROM cleandb.ec_class_names WHERE ec_number LIKE $1 OR ec_name LIKE $2 ORDER BY 1 ASC"""
+    query = f"""SELECT ec_number, ec_name FROM cleandb.ec_class_names WHERE ec_number LIKE $1 OR LOWER(ec_name) LIKE LOWER($2) ORDER BY 1 ASC"""
     query += f" LIMIT {params.limit or 10}"
 
     # Execute the query
