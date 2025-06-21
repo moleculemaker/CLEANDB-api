@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -36,14 +36,14 @@ class CLEANSearchQueryParams(BaseModel):
     gene_name: Optional[List[str]] = Field(
         None, description="Gene Name"
     )
-    ec_number: Optional[List[str]] = Field(
-        None, description="CLEAN_EC"
+    clean_ec_number: Optional[List[str]] = Field(
+        None, description="CLEAN predicted EC number"
     )
-    ec_confidence: Optional[float] = Field(
-        None, description="EC_Class"
+    clean_ec_confidence: Optional[float] = Field(
+        None, description="Minimum confidence for CLEAN predicted EC number"
     )
     sequence_length: Optional[str] = Field(
-        None, description="Amino Acids"
+        None, description="Minimum sequence length"
     )
 
     # Numeric range filters (removed as requested)
@@ -58,3 +58,30 @@ class CLEANSearchQueryParams(BaseModel):
         None, description="Maximum number of records to return"
     )
     offset: Optional[int] = Field(0, description="Number of records to skip")
+
+class CLEANTypeaheadQueryParams(BaseModel):
+    """Query parameters for CLEAN typeahead suggestions."""
+
+    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name'] = Field(
+        None,
+        description="Which field to search in",
+    )
+    search: str = Field(
+        None,
+        min_length=3,
+        description="Search term for typeahead suggestions (minimum 3 characters)"
+    )
+    limit: Optional[int] = Field(
+        None, description="Maximum number of records to return"
+    )
+
+class CLEANECLookupQueryParams(BaseModel):
+    """Query parameters for CLEAN EC lookup."""
+
+    search: str = Field(
+        None,
+        description="A partial or full EC number or EC class name to search for"
+    )
+    limit: Optional[int] = Field(
+        None, description="Maximum number of records to return"
+    )

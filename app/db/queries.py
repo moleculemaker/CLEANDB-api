@@ -4,7 +4,7 @@ import rich
 
 from app.db.database import Database
 from app.models.clean_data import CLEANColumn
-from app.models.query_params import CLEANSearchQueryParams
+from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams
 
 async def build_ec_conditions(
     params: CLEANSearchQueryParams,
@@ -14,23 +14,25 @@ async def build_ec_conditions(
     query_params = {}
     param_idx = 0
 
-    if params.ec_number:
+    if params.clean_ec_number:
         ec_conditions = []
-        for value in params.ec_number:
+        for value in params.clean_ec_number:
             param_idx += 1
             param_name = f"param_{param_idx}"
-            if "%" in value:
+            if value.endswith('-'):
+                # ec_class_names uses a terminal dash as a wildcard
                 ec_conditions.append(f"clean_ec_number LIKE ${param_idx}")
+                query_params[param_name] = value.replace("-", "%")
             else:
                 ec_conditions.append(f"clean_ec_number = ${param_idx}")
-            query_params[param_name] = value
+                query_params[param_name] = value
         conditions.append(f"({' OR '.join(ec_conditions)})")
 
-    if params.ec_confidence is not None:
+    if params.clean_ec_confidence is not None:
         param_idx += 1
         param_name = f"param_{param_idx}"
         conditions.append(f"clean_ec_confidence > ${param_idx}")
-        query_params[param_name] = params.ec_confidence
+        query_params[param_name] = params.clean_ec_confidence
 
     where_clause = " AND ".join(conditions) if conditions else "TRUE"
     return where_clause, query_params
@@ -59,13 +61,9 @@ async def build_base_conditions(
                 param_idx += 1
                 param_name = f"param_{param_idx}"
 
-                # Special handling for EC number with wildcard support
-                if column == "ec_number" and "%" in value:
-                    column_conditions.append(f"{column} LIKE ${param_idx}")
-                else:
-                    column_conditions.append(f"LOWER({column}) = LOWER(${param_idx})")
-
+                column_conditions.append(f"LOWER({column}) = LOWER(${param_idx})")
                 query_params[param_name] = value
+
 
             if column_conditions:
                 conditions.append(f"({' OR '.join(column_conditions)})")
@@ -160,7 +158,6 @@ async def get_filtered_data(
 
     # Execute the query
     records = await db.fetch(query, *query_args)
-    rich.print(f"{records=}")
     return records
 
 
@@ -177,3 +174,51 @@ async def get_total_count(db: Database, params: CLEANSearchQueryParams) -> int:
     # Execute the query
     result = await db.fetchval(query, *query_args)
     return result
+
+async def get_typeahead_suggestions(db: Database, params: CLEANTypeaheadQueryParams
+) -> List[str]:
+    """Get typeahead suggestions based on the query parameters."""
+    search = params.search.strip()
+    if len(search) < 3:
+        raise ValueError("Search term must be at least 3 characters long.")
+
+    if params.field_name == 'accession':
+        # match the beginning of the string
+        search += '%'
+        query = f"""SELECT DISTINCT accession FROM cleandb.predictions_uniprot_annot WHERE LOWER(accession) LIKE LOWER($1) ORDER BY 1 ASC"""
+    elif params.field_name == 'organism':
+        search = '%' + search + '%'
+        # match any part of the string
+        query = f"""SELECT DISTINCT organism FROM cleandb.predictions_uniprot_annot WHERE LOWER(organism) LIKE LOWER($1) ORDER BY 1 ASC"""
+    elif params.field_name == 'protein_name':
+        # match any part of the string
+        search = '%' + search + '%'
+        query = f"""SELECT DISTINCT protein_name FROM cleandb.predictions_uniprot_annot WHERE LOWER(protein_name) LIKE LOWER($1) ORDER BY 1 ASC"""
+    elif params.field_name == 'gene_name':
+        # match any part of the string (note we have gene names that start with an apostrophe, for example, which the user might not expect)
+        search = '%' + search + '%'
+        query = f"""SELECT DISTINCT gene_name FROM cleandb.predictions_uniprot_annot WHERE LOWER(gene_name) LIKE LOWER($1) ORDER BY 1 ASC"""
+    else:
+        raise ValueError(f"Invalid field name: {params.field_name}")
+
+    query += f" LIMIT {params.limit or 10}"
+
+    # Execute the query
+    records = await db.fetch(query, search)
+    return [record[params.field_name] for record in records]
+
+async def get_ec_suggestions(db: Database, params: CLEANECLookupQueryParams
+) -> List[Dict[str, str]]:
+    """Look up EC numbers or names based on the query parameters."""
+    search = params.search.strip()
+
+    # match numbers at the beginning of the string
+    number_search = search + '%'
+    # match names anywhere in the string
+    name_search = '%' + search + '%'
+    query = f"""SELECT ec_number, ec_name FROM cleandb.ec_class_names WHERE ec_number LIKE $1 OR ec_name LIKE $2 ORDER BY 1 ASC"""
+    query += f" LIMIT {params.limit or 10}"
+
+    # Execute the query
+    records = await db.fetch(query, number_search, name_search)
+    return [{ 'ec_number': record['ec_number'], 'ec_name': record['ec_name'] } for record in records]
