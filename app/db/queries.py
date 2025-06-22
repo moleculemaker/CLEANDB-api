@@ -23,6 +23,7 @@ async def build_conditions(
     }
 
     for column, values in string_columns.items():
+        rich.print(f"Processing column: {column} with values: {values}")
         if values:
             column_conditions = []
 
@@ -30,44 +31,57 @@ async def build_conditions(
                 param_idx += 1
                 param_name = f"param_{param_idx}"
 
-                if column == "clean_ec_number":
-                    # for EC numbers, we allow a terminal dash as a wildcard, which is the convention used in the ec_class_names table
-                    if value.endswith('-'):
-                        column_conditions.append(f"{column} LIKE ${param_idx}")
-                        query_params[param_name] = value.replace("-", "%")
-                    else:
-                        column_conditions.append(f"{column} = ${param_idx}")
-                        query_params[param_name] = value
-                elif column == "clean_ec_confidence":
-                    column_conditions.append(f"{column} > ${param_idx}")
-                    query_params[param_name] = value
-                elif column == "accession":
+                if column == "accession":
                     # accessions are stored and indexed in uppercase
                     column_conditions.append(f"{column} = UPPER(${param_idx})")
+                    query_params[param_name] = value
                 else:
                     column_conditions.append(f"LOWER({column}) = LOWER(${param_idx})")
-                query_params[param_name] = value
-
+                    query_params[param_name] = value
 
             if column_conditions:
                 conditions.append(f"({' OR '.join(column_conditions)})")
 
+    if params.clean_ec_number is not None:
+        column_conditions = []
+
+        for value in params.clean_ec_number:
+            param_idx += 1
+            param_name = f"param_{param_idx}"
+
+            # for EC numbers, we allow a terminal dash as a wildcard, which is the convention used in the ec_class_names table
+            if value.endswith("-"):
+                column_conditions.append(f"clean_ec_number LIKE ${param_idx}")
+                query_params[param_name] = value.replace("-", "%")
+            else:
+                column_conditions.append(f"clean_ec_number = ${param_idx}")
+                query_params[param_name] = value
+        if column_conditions:
+            conditions.append(f"pua.predictions_uniprot_annot_id IN (SELECT predictions_uniprot_annot_id FROM cleandb.predictions_uniprot_annot_clean_ec WHERE " + " OR ".join(column_conditions) + ")")
+
+    if params.clean_ec_confidence is not None:
+        param_idx += 1
+        param_name = f"param_{param_idx}"
+        conditions.append(f"max_clean_ec_confidence > ${param_idx}")
+        query_params[param_name] = params.clean_ec_confidence
+
     if params.sequence_length is not None:
         param_idx += 1
         param_name = f"param_{param_idx}"
-        conditions.append(f"amino_acids < ${param_idx}")
+        conditions.append(f"amino_acids >= ${param_idx}")
         query_params[param_name] = params.sequence_length
+
     # Combine all conditions with AND logic
     where_clause = " AND ".join(conditions) if conditions else "TRUE"
 
     return where_clause, query_params
 
-def get_query(columns_to_select: str, where_clause: str) -> str: 
+def get_query(columns_to_select: str, where_clause: str) -> str:
     return f"""
     SELECT
         {columns_to_select}
     FROM cleandb.predictions_uniprot_annot pua
-    INNER JOIN cleandb.predictions_uniprot_annot_clean_ec_mv01 puace 
+    INNER JOIN cleandb.predictions_uniprot_annot_clean_ec_mv01 puace
         ON puace.predictions_uniprot_annot_id = pua.predictions_uniprot_annot_id
     LEFT JOIN cleandb.predictions_uniprot_annot_ec_mv01 puae
         ON puae.predictions_uniprot_annot_id = pua.predictions_uniprot_annot_id
@@ -146,7 +160,7 @@ async def get_typeahead_suggestions(db: Database, params: CLEANTypeaheadQueryPar
     elif params.field_name == 'organism':
         search = '%' + search + '%'
         # match any part of the string
-        query = f"""SELECT DISTINCT organism FROM cleandb.predictions_uniprot_annot WHERE LOWER(organism) LIKE LOWER($1) ORDER BY 1 ASC"""
+        query = f"""SELECT DISTINCT organism FROM cleandb.predictions_uniprot_annot_mv01 WHERE organism_lower LIKE LOWER($1) ORDER BY 1 ASC"""
     elif params.field_name == 'protein_name':
         # match any part of the string
         search = '%' + search + '%'
