@@ -23,21 +23,21 @@ class CLEANSearchQueryParams(BaseModel):
     # String filters (exact match, case-insensitive, multiple values with OR logic)
     accession: Optional[List[str]] = Field(
         None,
-        description="Uniprot Accession",
+        description="Uniprot Accession, case-insensitive exact match (multiple values allowed, OR logic)",
     )
     organism: Optional[List[str]] = Field(
         None,
-        description="Organism Name",
+        description="Organism Name, case-insensitive exact match (multiple values allowed, OR logic)",
     )
     protein_name: Optional[List[str]] = Field(
         None,
-        description="Protein Name",
+        description="Protein Name, case-insensitive exact match (multiple values allowed, OR logic)",
     )
     gene_name: Optional[List[str]] = Field(
-        None, description="Gene Name"
+        None, description="Gene Name, case-insensitive exact match (multiple values allowed, OR logic)"
     )
     clean_ec_number: Optional[List[str]] = Field(
-        None, description="CLEAN predicted EC number"
+        None, description="CLEAN predicted EC number, exact match or wildcard match using terminal dash (multiple values allowed, OR logic)"
     )
     clean_ec_confidence: Optional[float] = Field(
         None, description="Minimum confidence for CLEAN predicted EC number"
