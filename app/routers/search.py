@@ -1,6 +1,6 @@
 import csv
 from io import StringIO
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -9,8 +9,8 @@ from loguru import logger
 
 from app.core.config import settings
 from app.db.database import Database, get_db
-from app.db.queries import get_filtered_data, get_total_count
-from app.models.query_params import CLEANSearchQueryParams, ResponseFormat
+from app.db.queries import get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions
+from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams, ResponseFormat
 
 router = APIRouter(tags=["Search"])
 
@@ -33,16 +33,16 @@ def parse_query_params(
         None,
         description="Gene Name"
     ),
-    ec_number: Optional[List[str]] = Query(
+    clean_ec_number: Optional[List[str]] = Query(
         None,
-        description="CLEAN_EC"
+        description="CLEAN predicted EC number"
     ),
     # Additional filters
-    ec_confidence: Optional[float] = Query(
-        None, description="EC_Class"
+    clean_ec_confidence: Optional[float] = Query(
+        None, description="Minimum confidence for CLEAN predicted EC number"
     ),
     sequence_length: Optional[str] = Query(
-        None, description="Amino Acids"
+        None, description="Minimum sequence length"
     ),
     # Response format and pagination
     format: ResponseFormat = Query(
@@ -64,8 +64,8 @@ def parse_query_params(
             protein_name=protein_name,
             organism=organism,
             gene_name=gene_name,
-            ec_number=ec_number,
-            ec_confidence = ec_confidence,
+            clean_ec_number=clean_ec_number,
+            clean_ec_confidence = clean_ec_confidence,
             sequence_length = sequence_length,
             format=format,
             limit=limit,
@@ -192,6 +192,96 @@ async def get_data(
                         )
 
             return response
+
+    except Exception as e:
+        logger.error(f"Error getting data: {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving data: {str(e)}")
+
+def parse_typeahead_params(
+    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name'] = Query(
+        None,
+        description="Which field to search in",
+    ),
+    search: str = Query(
+        None,
+        min_length=3,
+        description="Search term for typeahead suggestions (minimum 3 characters)"
+    )
+) -> CLEANTypeaheadQueryParams:
+    """Parse and validate query parameters."""
+    try:
+        return CLEANTypeaheadQueryParams(
+            field_name=field_name,
+            search=search,
+        )
+    except Exception as e:
+        logger.error(f"Error parsing query parameters: {e}")
+        raise HTTPException(
+            status_code=400, detail=f"Invalid query parameters: {str(e)}"
+        )
+
+@router.get("/typeahead", summary="Get typeahead suggestions for enzyme kinetic data")
+async def get_typeahead(
+    params: CLEANTypeaheadQueryParams = Depends(parse_typeahead_params),
+    db: Database = Depends(get_db),
+    request: Request = None,
+) -> Any:
+    """
+    Get typeahead suggestions for enzyme kinetic data.
+    """
+
+    try:
+        params.limit = 20
+        # Get data from database
+        data = await get_typeahead_suggestions(db, params)
+
+        # JSON response
+        response = {
+            "data": data
+        }
+        return response
+
+    except Exception as e:
+        logger.error(f"Error getting data: {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving data: {str(e)}")
+
+def parse_ec_lookup_params(
+    search: str = Query(
+        None,
+        description="A partial or full EC number or EC class name to search for"
+    )
+) -> CLEANECLookupQueryParams:
+    """Parse and validate query parameters."""
+    try:
+        return CLEANECLookupQueryParams(
+            search=search,
+        )
+    except Exception as e:
+        logger.error(f"Error parsing query parameters: {e}")
+        raise HTTPException(
+            status_code=400, detail=f"Invalid query parameters: {str(e)}"
+        )
+
+@router.get("/ec_lookup", summary="Look up EC numbers or classes")
+async def get_ec_lookup(
+    params: CLEANECLookupQueryParams = Depends(parse_ec_lookup_params),
+    db: Database = Depends(get_db),
+    request: Request = None,
+) -> Any:
+    """
+    Look up EC numbers or classes based on a search term.
+    """
+
+    try:
+        params.limit = 20
+        # Get data from database
+        data = await get_ec_suggestions(db, params)
+
+        # JSON response
+        response = {
+            "data": data
+        }
+        return response
 
     except Exception as e:
         logger.error(f"Error getting data: {e}")
