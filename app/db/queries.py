@@ -133,13 +133,12 @@ async def get_filtered_data(
 
 async def get_total_count(db: Database, params: CLEANSearchQueryParams) -> int:
     """Get total count of records matching the filters."""
-    ec_where_clause, ec_query_params = await build_ec_conditions(params)
-    base_where_clause, base_query_params = await build_base_conditions(params)
+    where_clause, query_params = await build_conditions(params)
 
-    query = get_query("COUNT(*)", ec_where_clause, base_where_clause)
+    query = get_query("COUNT(*)", where_clause)
 
     # Extract query parameters from the dictionary
-    query_args = list(ec_query_params.values()) + list(base_query_params.values())
+    query_args = list(query_params.values())
 
     # Execute the query
     result = await db.fetchval(query, *query_args)
