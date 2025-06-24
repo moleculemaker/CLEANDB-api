@@ -1,6 +1,6 @@
 import csv
 from io import StringIO
-from typing import Any, List, Literal, Optional, Union
+from typing import Any, List, Literal, Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
