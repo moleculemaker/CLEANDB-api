@@ -30,14 +30,14 @@ spec:
 {{- else }}
           # Use hardcoded plaintext values (less secure)
           env:
-            - name: OED_DB_USER
-              value: {{ .Values.config.OED_DB_USER }}
-            - name: OED_DB_PASSWORD
-              value: {{ .Values.config.OED_DB_PASSWORD }}
-            - name: OED_DB_HOST
-              value: {{ .Values.config.OED_DB_HOST }}
-            - name: OED_DB_PORT
-              value: {{ .Values.config.OED_DB_PORT }}
-            - name: OED_DB_NAME
-              value: {{ .Values.config.OED_DB_NAME }}
+            - name: CLEAN_DB_USER
+              value: {{ .Values.config.CLEAN_DB_USER }}
+            - name: CLEAN_DB_PASSWORD
+              value: {{ .Values.config.CLEAN_DB_PASSWORD }}
+            - name: CLEAN_DB_HOST
+              value: {{ .Values.config.CLEAN_DB_HOST }}
+            - name: CLEAN_DB_PORT
+              value: {{ .Values.config.CLEAN_DB_PORT }}
+            - name: CLEAN_DB_NAME
+              value: {{ .Values.config.CLEAN_DB_NAME }}
 {{- end }}
