@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.db.database import Database, get_db
 from app.db.queries import get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams, ResponseFormat
+from app.models.clean_data import CLEANECLookupResponse, CLEANECLookupMatch, CLEANTypeaheadResponse
 
 router = APIRouter(tags=["Search"])
 
@@ -199,7 +200,7 @@ async def get_data(
 
 def parse_typeahead_params(
     field_name: Literal['accession', 'organism', 'protein_name', 'gene_name'] = Query(
-        None,
+        'organism',
         description="Which field to search in",
     ),
     search: str = Query(
@@ -225,7 +226,7 @@ async def get_typeahead(
     params: CLEANTypeaheadQueryParams = Depends(parse_typeahead_params),
     db: Database = Depends(get_db),
     request: Request = None,
-) -> Any:
+) -> CLEANTypeaheadResponse:
     """
     Get typeahead suggestions for enzyme kinetic data.
     """
@@ -235,11 +236,11 @@ async def get_typeahead(
         # Get data from database
         data = await get_typeahead_suggestions(db, params)
 
-        # JSON response
-        response = {
-            "data": data
-        }
-        return response
+        return CLEANTypeaheadResponse(
+            field_name=params.field_name,
+            search=params.search,
+            matches=data
+        )
 
     except Exception as e:
         logger.error(f"Error getting data: {e}")
@@ -263,11 +264,12 @@ def parse_ec_lookup_params(
         )
 
 @router.get("/ec_lookup", summary="Look up EC numbers or classes")
+
 async def get_ec_lookup(
     params: CLEANECLookupQueryParams = Depends(parse_ec_lookup_params),
     db: Database = Depends(get_db),
     request: Request = None,
-) -> Any:
+) -> CLEANECLookupResponse:
     """
     Look up EC numbers or classes based on a search term.
     """
@@ -277,11 +279,10 @@ async def get_ec_lookup(
         # Get data from database
         data = await get_ec_suggestions(db, params)
 
-        # JSON response
-        response = {
-            "data": data
-        }
-        return response
+        return CLEANECLookupResponse(
+            search=params.search,
+            matches=[CLEANECLookupMatch(ec_number=item["ec_number"], ec_name=item["ec_name"]) for item in data]
+        )
 
     except Exception as e:
         logger.error(f"Error getting data: {e}")

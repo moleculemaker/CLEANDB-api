@@ -63,7 +63,7 @@ class CLEANTypeaheadQueryParams(BaseModel):
     """Query parameters for CLEAN typeahead suggestions."""
 
     field_name: Literal['accession', 'organism', 'protein_name', 'gene_name'] = Field(
-        None,
+        'organism',
         description="Which field to search in",
     )
     search: str = Field(

@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -68,12 +68,49 @@ class CLEANDataBase(BaseModel):
     clean_ec_number_array: Optional[List[str]] = Field(
         None,
         description = ""
-    ),
+    )
     clean_ec_confidence_array: Optional[List[float]] = Field(
         None,
         description = ""
-    ),
+    )
     annot_ec_number_array: Optional[List[str]] = Field(
         None,
         description = ""
+    )
+
+class CLEANTypeaheadResponse(BaseModel):
+    """Model for the response of a CLEAN typeahead query."""
+    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name'] = Field(
+        'organism',
+        description="Which field to search in",
+    ),
+    search: str = Field(
+        None,
+        min_length=3,
+        description="Search term for typeahead suggestions (minimum 3 characters)"
+    )
+    matches: List[str] = Field(
+        [],
+        description="List of results matching the search term."
+    )
+
+class CLEANECLookupMatch(BaseModel):
+    """Model for a single match in the CLEAN EC lookup response."""
+    ec_number: str = Field(
+        None,
+        description="EC number."
+    )
+    ec_name: str = Field(
+        None,
+        description="EC name."
+    )
+
+class CLEANECLookupResponse(BaseModel):
+    search: str = Field(
+        None,
+        description="The search term used for the lookup."
+    )
+    matches: List[CLEANECLookupMatch] = Field(
+        [],
+        description="List of matches for the EC lookup."
     )
