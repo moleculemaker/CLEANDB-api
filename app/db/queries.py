@@ -169,6 +169,9 @@ async def get_typeahead_suggestions(db: Database, params: CLEANTypeaheadQueryPar
         # match any part of the string (note we have gene names that start with an apostrophe, for example, which the user might not expect)
         search = '%' + search + '%'
         query = f"""SELECT DISTINCT gene_name FROM cleandb.predictions_uniprot_annot WHERE LOWER(gene_name) LIKE LOWER($1) ORDER BY 1 ASC"""
+    elif params.field_name == 'uniprot_id':
+        search = '%' + search + '%'
+        query = f"""SELECT DISTINCT uniprot_id FROM cleandb.predictions_uniprot_annot WHERE LOWER(uniprot_id) LIKE LOWER($1) ORDER BY 1 ASC"""
     else:
         raise ValueError(f"Invalid field name: {params.field_name}")
 

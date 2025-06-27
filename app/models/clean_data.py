@@ -112,7 +112,7 @@ class CLEANSearchResponse(BaseModel):
 
 class CLEANTypeaheadResponse(BaseModel):
     """Model for the response of a CLEAN typeahead query."""
-    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name'] = Field(
+    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name', 'uniprot_id'] = Field(
         'organism',
         description="Which field to search in",
     ),
