@@ -26,7 +26,7 @@ def parse_query_params(
         None,
         description="Organism Name",
     ),
-    protein_name: Optional[List[str]] = Query(
+    protein: Optional[List[str]] = Query(
         None,
         description="Protein Name",
     ),
@@ -34,9 +34,13 @@ def parse_query_params(
         None,
         description="Gene Name"
     ),
-    clean_ec_number: Optional[List[str]] = Query(
+    ec_number: Optional[List[str]] = Query(
         None,
         description="CLEAN predicted EC number"
+    ),
+    uniprot: Optional[List[str]] = Query(
+        None,
+        description="Uniprot ID"
     ),
     # Additional filters
     clean_ec_confidence: Optional[float] = Query(
@@ -62,12 +66,13 @@ def parse_query_params(
 
         return CLEANSearchQueryParams(
             accession=accession,
-            protein_name=protein_name,
+            protein_name=protein,
             organism=organism,
             gene_name=gene_name,
-            clean_ec_number=clean_ec_number,
+            clean_ec_number=ec_number,
             clean_ec_confidence = clean_ec_confidence,
             sequence_length = sequence_length,
+            uniprot_id = uniprot,
             format=format,
             limit=limit,
             offset=offset,
@@ -142,18 +147,23 @@ async def get_data(
                 limit=total_count if total_count < params.limit else params.limit,
                 data=[CLEANDataBase(
                     predictions_uniprot_annot_id=record["predictions_uniprot_annot_id"],
-                    uniprot_id=record["uniprot_id"],
+                    uniprot=record["uniprot_id"],
                     curation_status=record["curation_status"],
                     accession=record["accession"],
-                    protein_name=record["protein_name"],
+                    protein=record["protein_name"],
                     organism=record["organism"],
-                    ncbi_taxid=record["ncbi_taxid"],
+                    ncbi_tax_id=record["ncbi_taxid"],
                     amino_acids=record["amino_acids"],
-                    protein_sequence=record["protein_sequence"],
-                    enzyme_function=record["enzyme_function"],
+                    sequence=record["protein_sequence"],
+                    function=record["enzyme_function"],
                     gene_name=record["gene_name"],
-                    clean_ec_number_array=record["clean_ec_number_array"],
-                    clean_ec_confidence_array=record["clean_ec_confidence_array"],
+                    predicted_ec=[
+                        {
+                            "ec_number": ec,
+                            "score": conf
+                        }
+                        for ec, conf in zip(record["clean_ec_number_array"], record["clean_ec_confidence_array"])
+                    ],
                     annot_ec_number_array=record["annot_ec_number_array"]
                 ) for record in data],
             )

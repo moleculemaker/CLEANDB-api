@@ -3,6 +3,10 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+class ECNumberConfidence(BaseModel):
+    ec_number: str
+    score: float
+
 class CLEANColumn(Enum):
     predictions_uniprot_annot_id = "predictions_uniprot_annot_id"
     uniprot_id = "uniprot_id"
@@ -27,7 +31,7 @@ class CLEANDataBase(BaseModel):
         None,
         description="Unique identifier for the CLEAN predictions record.",
     )
-    uniprot_id: Optional[str] = Field(
+    uniprot: Optional[str] = Field(
         None,
         description="Unique identifier for the Uniprot record.",
     )
@@ -39,7 +43,7 @@ class CLEANDataBase(BaseModel):
         None,
         description="Uniprot accession number.",
     )
-    protein_name: Optional[str] = Field(
+    protein: Optional[str] = Field(
         None,
         description="Name of the protein associated with the Uniprot record.",
     )
@@ -47,32 +51,29 @@ class CLEANDataBase(BaseModel):
         None,
         description= "Name of the organism associated with the Uniprot record.",
     )
-    ncbi_taxid: Optional[int] = Field(
+    ncbi_tax_id: Optional[int] = Field(
         None,
         description="NCBI Taxonomy ID for the organism associated with the Uniprot record.",
     )
     amino_acids: Optional[int] = Field(
         None, description= "Length of the amino acid sequence associated with the Uniprot record.",
     )
-    protein_sequence: Optional[str] = Field(
+    sequence: Optional[str] = Field(
         None,
         description="Amino acid sequence of the protein associated with the Uniprot record.",
     )
-    enzyme_function: Optional[str] = Field(
+    function: Optional[str] = Field(
         None,
         description="Function of the enzyme associated with the Uniprot record.",
     )
     gene_name: Optional[str] = Field(
         None, description="Name of the gene associated with the Uniprot record.",
     )
-    clean_ec_number_array: Optional[List[str]] = Field(
+    predicted_ec: Optional[List[ECNumberConfidence]] = Field(
         None,
-        description="List of CLEAN predicted EC numbers associated with the Uniprot record. Each EC number is a string.",
+        description="List of CLEAN predicted EC numbers with associated confidence scores."
     )
-    clean_ec_confidence_array: Optional[List[float]] = Field(
-        None,
-        description="List of confidence scores for each CLEAN predicted EC number. Each score is a float.",
-    )
+
     annot_ec_number_array: Optional[List[str]] = Field(
         None,
         description="List of annotated EC numbers associated with the Uniprot record. Each EC number is a string.",

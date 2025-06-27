@@ -20,6 +20,7 @@ async def build_conditions(
         "protein_name": params.protein_name,
         "organism": params.organism,
         "gene_name": params.gene_name,
+        "uniprot_id": params.uniprot_id,
     }
 
     for column, values in string_columns.items():
