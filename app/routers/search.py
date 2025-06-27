@@ -1,6 +1,6 @@
 import csv
 from io import StringIO
-from typing import Any, List, Literal, Optional, Union
+from typing import Any, List, Literal, Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -246,14 +246,14 @@ def parse_typeahead_params(
             status_code=400, detail=f"Invalid query parameters: {str(e)}"
         )
 
-@router.get("/typeahead", summary="Get typeahead suggestions for enzyme kinetic data")
+@router.get("/typeahead", summary="Get typeahead suggestions for searching the database of predicted EC numbers.")
 async def get_typeahead(
     params: CLEANTypeaheadQueryParams = Depends(parse_typeahead_params),
     db: Database = Depends(get_db),
     request: Request = None,
 ) -> CLEANTypeaheadResponse:
     """
-    Get typeahead suggestions for enzyme kinetic data.
+    Get typeahead suggestions for searching the database of predicted EC numbers.
     """
 
     try:
