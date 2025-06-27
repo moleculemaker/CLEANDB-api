@@ -36,6 +36,9 @@ class CLEANSearchQueryParams(BaseModel):
     gene_name: Optional[List[str]] = Field(
         None, description="Gene Name, case-insensitive exact match (multiple values allowed, OR logic)"
     )
+    uniprot_id: Optional[List[str]] = Field(
+        None, description=""
+    )
     clean_ec_number: Optional[List[str]] = Field(
         None, description="CLEAN predicted EC number, exact match or wildcard match using terminal dash (multiple values allowed, OR logic)"
     )
