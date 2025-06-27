@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Tuple
 
 import rich
-
+import re
 from app.db.database import Database
 from app.models.clean_data import CLEANColumn
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams
@@ -53,7 +53,7 @@ async def build_conditions(
             # for EC numbers, we allow a terminal dash as a wildcard, which is the convention used in the ec_class_names table
             if value.endswith("-"):
                 column_conditions.append(f"clean_ec_number LIKE ${param_idx}")
-                query_params[param_name] = value.replace("-", "%")
+                query_params[param_name] = re.sub(r'-.*$', '%', value)
             else:
                 column_conditions.append(f"clean_ec_number = ${param_idx}")
                 query_params[param_name] = value
