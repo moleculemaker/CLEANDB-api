@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Tuple
 
 import rich
-
+import re
 from app.db.database import Database
 from app.models.clean_data import CLEANColumn
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams
@@ -50,10 +50,10 @@ async def build_conditions(
             param_idx += 1
             param_name = f"param_{param_idx}"
 
-            # for EC numbers, we allow a terminal dash as a wildcard, which is the convention used in the ec_class_names table
+            # for EC numbers, we allow dashes as wildcards matching the end of the string (e.g., "1.2.-.-"), which is the convention used in the ec_class_names table
             if value.endswith("-"):
                 column_conditions.append(f"clean_ec_number LIKE ${param_idx}")
-                query_params[param_name] = value.replace("-", "%")
+                query_params[param_name] = re.sub(r'-.*$', '%', value)
             else:
                 column_conditions.append(f"clean_ec_number = ${param_idx}")
                 query_params[param_name] = value
@@ -169,6 +169,9 @@ async def get_typeahead_suggestions(db: Database, params: CLEANTypeaheadQueryPar
         # match any part of the string (note we have gene names that start with an apostrophe, for example, which the user might not expect)
         search = '%' + search + '%'
         query = f"""SELECT DISTINCT gene_name FROM cleandb.predictions_uniprot_annot WHERE LOWER(gene_name) LIKE LOWER($1) ORDER BY 1 ASC"""
+    elif params.field_name == 'uniprot_id':
+        search = '%' + search + '%'
+        query = f"""SELECT DISTINCT uniprot_id FROM cleandb.predictions_uniprot_annot WHERE LOWER(uniprot_id) LIKE LOWER($1) ORDER BY 1 ASC"""
     else:
         raise ValueError(f"Invalid field name: {params.field_name}")
 

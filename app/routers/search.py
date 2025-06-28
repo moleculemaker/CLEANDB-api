@@ -224,7 +224,7 @@ async def get_data(
         raise HTTPException(status_code=500, detail=f"Error retrieving data: {str(e)}")
 
 def parse_typeahead_params(
-    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name'] = Query(
+    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name', 'uniprot_id'] = Query(
         'organism',
         description="Which field to search in",
     ),
