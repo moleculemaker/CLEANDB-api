@@ -50,7 +50,7 @@ async def build_conditions(
             param_idx += 1
             param_name = f"param_{param_idx}"
 
-            # for EC numbers, we allow a terminal dash as a wildcard, which is the convention used in the ec_class_names table
+            # for EC numbers, we allow dashes as wildcards matching the end of the string (e.g., "1.2.-.-"), which is the convention used in the ec_class_names table
             if value.endswith("-"):
                 column_conditions.append(f"clean_ec_number LIKE ${param_idx}")
                 query_params[param_name] = re.sub(r'-.*$', '%', value)
