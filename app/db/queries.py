@@ -87,7 +87,7 @@ def get_query(columns_to_select: str, where_clause: str) -> str:
     LEFT JOIN cleandb.predictions_uniprot_annot_ec_mv01 puae
         ON puae.predictions_uniprot_annot_id = pua.predictions_uniprot_annot_id
     WHERE {where_clause}
-    ORDER BY puace.max_clean_ec_confidence DESC
+    ORDER BY puace.max_clean_ec_confidence DESC, pua.amino_acids ASC, pua.predictions_uniprot_annot_id ASC
     """
 
 async def get_filtered_data(
