@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Tuple
 
 import rich
-
+import re
 from app.db.database import Database
 from app.models.clean_data import CLEANColumn
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams
@@ -20,6 +20,7 @@ async def build_conditions(
         "protein_name": params.protein_name,
         "organism": params.organism,
         "gene_name": params.gene_name,
+        "uniprot_id": params.uniprot_id,
     }
 
     for column, values in string_columns.items():
@@ -49,10 +50,10 @@ async def build_conditions(
             param_idx += 1
             param_name = f"param_{param_idx}"
 
-            # for EC numbers, we allow a terminal dash as a wildcard, which is the convention used in the ec_class_names table
+            # for EC numbers, we allow dashes as wildcards matching the end of the string (e.g., "1.2.-.-"), which is the convention used in the ec_class_names table
             if value.endswith("-"):
                 column_conditions.append(f"clean_ec_number LIKE ${param_idx}")
-                query_params[param_name] = value.replace("-", "%")
+                query_params[param_name] = re.sub(r'-.*$', '%', value)
             else:
                 column_conditions.append(f"clean_ec_number = ${param_idx}")
                 query_params[param_name] = value
@@ -133,13 +134,12 @@ async def get_filtered_data(
 
 async def get_total_count(db: Database, params: CLEANSearchQueryParams) -> int:
     """Get total count of records matching the filters."""
-    ec_where_clause, ec_query_params = await build_ec_conditions(params)
-    base_where_clause, base_query_params = await build_base_conditions(params)
+    where_clause, query_params = await build_conditions(params)
 
-    query = get_query("COUNT(*)", ec_where_clause, base_where_clause)
+    query = get_query("COUNT(*)", where_clause)
 
     # Extract query parameters from the dictionary
-    query_args = list(ec_query_params.values()) + list(base_query_params.values())
+    query_args = list(query_params.values())
 
     # Execute the query
     result = await db.fetchval(query, *query_args)
@@ -169,6 +169,9 @@ async def get_typeahead_suggestions(db: Database, params: CLEANTypeaheadQueryPar
         # match any part of the string (note we have gene names that start with an apostrophe, for example, which the user might not expect)
         search = '%' + search + '%'
         query = f"""SELECT DISTINCT gene_name FROM cleandb.predictions_uniprot_annot WHERE LOWER(gene_name) LIKE LOWER($1) ORDER BY 1 ASC"""
+    elif params.field_name == 'uniprot_id':
+        search = '%' + search + '%'
+        query = f"""SELECT DISTINCT uniprot_id FROM cleandb.predictions_uniprot_annot WHERE LOWER(uniprot_id) LIKE LOWER($1) ORDER BY 1 ASC"""
     else:
         raise ValueError(f"Invalid field name: {params.field_name}")
 

@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.db.database import Database, get_db
 from app.db.queries import get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams, ResponseFormat
+from app.models.clean_data import CLEANDataBase, CLEANECLookupResponse, CLEANECLookupMatch, CLEANSearchResponse, CLEANTypeaheadResponse
 
 router = APIRouter(tags=["Search"])
 
@@ -25,7 +26,7 @@ def parse_query_params(
         None,
         description="Organism Name",
     ),
-    protein_name: Optional[List[str]] = Query(
+    protein: Optional[List[str]] = Query(
         None,
         description="Protein Name",
     ),
@@ -33,9 +34,13 @@ def parse_query_params(
         None,
         description="Gene Name"
     ),
-    clean_ec_number: Optional[List[str]] = Query(
+    ec_number: Optional[List[str]] = Query(
         None,
         description="CLEAN predicted EC number"
+    ),
+    uniprot: Optional[List[str]] = Query(
+        None,
+        description="Uniprot ID"
     ),
     # Additional filters
     clean_ec_confidence: Optional[float] = Query(
@@ -61,12 +66,13 @@ def parse_query_params(
 
         return CLEANSearchQueryParams(
             accession=accession,
-            protein_name=protein_name,
+            protein_name=protein,
             organism=organism,
             gene_name=gene_name,
-            clean_ec_number=clean_ec_number,
+            clean_ec_number=ec_number,
             clean_ec_confidence = clean_ec_confidence,
             sequence_length = sequence_length,
+            uniprot_id = uniprot,
             format=format,
             limit=limit,
             offset=offset,
@@ -83,7 +89,7 @@ async def get_data(
     params: CLEANSearchQueryParams = Depends(parse_query_params),
     db: Database = Depends(get_db),
     request: Request = None,
-) -> Any:
+) -> CLEANSearchResponse:
     """
     Get enzyme kinetic data with filtering options.
     """
@@ -133,19 +139,39 @@ async def get_data(
                 headers={"Content-Disposition": "attachment; filename=CLEAN_data.csv"},
             )
         else:
-            # JSON response with enhanced pagination info
+            # TODO don't we want total_count to be the value returned by get_total_count?
             total_count = len(data)
-            response = {
-                "total": total_count,
-                "offset": params.offset,
-                "limit": total_count if total_count < params.limit else params.limit,
-                "data": data,
-            }
+            response = CLEANSearchResponse(
+                total=total_count,
+                offset=params.offset,
+                limit=total_count if total_count < params.limit else params.limit,
+                data=[CLEANDataBase(
+                    predictions_uniprot_annot_id=record["predictions_uniprot_annot_id"],
+                    uniprot=record["uniprot_id"],
+                    curation_status=record["curation_status"],
+                    accession=record["accession"],
+                    protein=record["protein_name"],
+                    organism=record["organism"],
+                    ncbi_tax_id=record["ncbi_taxid"],
+                    amino_acids=record["amino_acids"],
+                    sequence=record["protein_sequence"],
+                    function=record["enzyme_function"],
+                    gene_name=record["gene_name"],
+                    predicted_ec=[
+                        {
+                            "ec_number": ec,
+                            "score": conf
+                        }
+                        for ec, conf in zip(record["clean_ec_number_array"], record["clean_ec_confidence_array"])
+                    ],
+                    annot_ec_number_array=record["annot_ec_number_array"]
+                ) for record in data],
+            )
 
             # Add pagination links if automatic pagination was applied
             if params.auto_paginated:
                 # Add flag indicating automatic pagination was applied
-                response["auto_paginated"] = True
+                response.auto_paginated = True
 
                 if request:
                     base_url = str(request.url).split("?")[0]
@@ -173,7 +199,7 @@ async def get_data(
                             "offset": next_offset,
                             "limit": current_limit,
                         }
-                        response["next"] = (
+                        response.next = (
                             f"{base_url}?{urlencode(next_params, doseq=True)}"
                         )
 
@@ -187,7 +213,7 @@ async def get_data(
                             "offset": prev_offset,
                             "limit": current_limit,
                         }
-                        response["previous"] = (
+                        response.previous = (
                             f"{base_url}?{urlencode(prev_params, doseq=True)}"
                         )
 
@@ -198,8 +224,8 @@ async def get_data(
         raise HTTPException(status_code=500, detail=f"Error retrieving data: {str(e)}")
 
 def parse_typeahead_params(
-    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name'] = Query(
-        None,
+    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name', 'uniprot_id'] = Query(
+        'organism',
         description="Which field to search in",
     ),
     search: str = Query(
@@ -220,14 +246,14 @@ def parse_typeahead_params(
             status_code=400, detail=f"Invalid query parameters: {str(e)}"
         )
 
-@router.get("/typeahead", summary="Get typeahead suggestions for enzyme kinetic data")
+@router.get("/typeahead", summary="Get typeahead suggestions for searching the database of predicted EC numbers.")
 async def get_typeahead(
     params: CLEANTypeaheadQueryParams = Depends(parse_typeahead_params),
     db: Database = Depends(get_db),
     request: Request = None,
-) -> Any:
+) -> CLEANTypeaheadResponse:
     """
-    Get typeahead suggestions for enzyme kinetic data.
+    Get typeahead suggestions for searching the database of predicted EC numbers.
     """
 
     try:
@@ -235,11 +261,11 @@ async def get_typeahead(
         # Get data from database
         data = await get_typeahead_suggestions(db, params)
 
-        # JSON response
-        response = {
-            "data": data
-        }
-        return response
+        return CLEANTypeaheadResponse(
+            field_name=params.field_name,
+            search=params.search,
+            matches=data
+        )
 
     except Exception as e:
         logger.error(f"Error getting data: {e}")
@@ -263,11 +289,12 @@ def parse_ec_lookup_params(
         )
 
 @router.get("/ec_lookup", summary="Look up EC numbers or classes")
+
 async def get_ec_lookup(
     params: CLEANECLookupQueryParams = Depends(parse_ec_lookup_params),
     db: Database = Depends(get_db),
     request: Request = None,
-) -> Any:
+) -> CLEANECLookupResponse:
     """
     Look up EC numbers or classes based on a search term.
     """
@@ -277,11 +304,10 @@ async def get_ec_lookup(
         # Get data from database
         data = await get_ec_suggestions(db, params)
 
-        # JSON response
-        response = {
-            "data": data
-        }
-        return response
+        return CLEANECLookupResponse(
+            search=params.search,
+            matches=[CLEANECLookupMatch(ec_number=item["ec_number"], ec_name=item["ec_name"]) for item in data]
+        )
 
     except Exception as e:
         logger.error(f"Error getting data: {e}")
