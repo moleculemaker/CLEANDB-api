@@ -164,11 +164,11 @@ async def get_typeahead_suggestions(db: Database, params: CLEANTypeaheadQueryPar
     elif params.field_name == 'protein_name':
         # match any part of the string
         search = '%' + search + '%'
-        query = f"""SELECT DISTINCT protein_name FROM cleandb.predictions_uniprot_annot WHERE LOWER(protein_name) LIKE LOWER($1) ORDER BY 1 ASC"""
+        query = f"""SELECT DISTINCT protein_name FROM cleandb.predictions_uniprot_annot_mv02 WHERE protein_name_lower LIKE LOWER($1) ORDER BY 1 ASC"""
     elif params.field_name == 'gene_name':
         # match any part of the string (note we have gene names that start with an apostrophe, for example, which the user might not expect)
         search = '%' + search + '%'
-        query = f"""SELECT DISTINCT gene_name FROM cleandb.predictions_uniprot_annot WHERE LOWER(gene_name) LIKE LOWER($1) ORDER BY 1 ASC"""
+        query = f"""SELECT DISTINCT gene_name FROM cleandb.predictions_uniprot_annot_mv03 WHERE gene_name_lower LIKE LOWER($1) ORDER BY 1 ASC"""
     elif params.field_name == 'uniprot_id':
         search = '%' + search + '%'
         query = f"""SELECT DISTINCT uniprot_id FROM cleandb.predictions_uniprot_annot WHERE LOWER(uniprot_id) LIKE LOWER($1) ORDER BY 1 ASC"""
