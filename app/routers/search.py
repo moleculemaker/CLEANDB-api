@@ -43,8 +43,11 @@ def parse_query_params(
         description="Uniprot ID"
     ),
     # Additional filters
-    clean_ec_confidence: Optional[float] = Query(
+    clean_ec_confidence_min: Optional[float] = Query(
         None, description="Minimum confidence for CLEAN predicted EC number"
+    ),
+    clean_ec_confidence_max: Optional[float] = Query(
+        None, description="Maximum confidence for CLEAN predicted EC number"
     ),
     sequence_length: Optional[str] = Query(
         None, description="Minimum sequence length"
@@ -70,7 +73,8 @@ def parse_query_params(
             organism=organism,
             gene_name=gene_name,
             clean_ec_number=ec_number,
-            clean_ec_confidence = clean_ec_confidence,
+            clean_ec_confidence_min = clean_ec_confidence_min,
+            clean_ec_confidence_max = clean_ec_confidence_max,
             sequence_length = sequence_length,
             uniprot_id = uniprot,
             format=format,

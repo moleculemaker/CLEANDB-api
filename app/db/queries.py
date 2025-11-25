@@ -60,11 +60,17 @@ async def build_conditions(
         if column_conditions:
             conditions.append(f"pua.predictions_uniprot_annot_id IN (SELECT predictions_uniprot_annot_id FROM cleandb.predictions_uniprot_annot_clean_ec WHERE " + " OR ".join(column_conditions) + ")")
 
-    if params.clean_ec_confidence is not None:
+    if params.clean_ec_confidence_min is not None:
         param_idx += 1
         param_name = f"param_{param_idx}"
         conditions.append(f"max_clean_ec_confidence > ${param_idx}")
-        query_params[param_name] = params.clean_ec_confidence
+        query_params[param_name] = params.clean_ec_confidence_min
+
+    if params.clean_ec_confidence_max is not None:
+        param_idx += 1
+        param_name = f"param_{param_idx}"
+        conditions.append(f"max_clean_ec_confidence < ${param_idx}")
+        query_params[param_name] = params.clean_ec_confidence_max
 
     if params.sequence_length is not None:
         param_idx += 1

@@ -42,8 +42,11 @@ class CLEANSearchQueryParams(BaseModel):
     clean_ec_number: Optional[List[str]] = Field(
         None, description="CLEAN predicted EC number, exact match or wildcard match using terminal dash (multiple values allowed, OR logic)"
     )
-    clean_ec_confidence: Optional[float] = Field(
+    clean_ec_confidence_min: Optional[float] = Field(
         None, description="Minimum confidence for CLEAN predicted EC number"
+    )
+    clean_ec_confidence_max: Optional[float] = Field(
+        None, description="Maximum confidence for CLEAN predicted EC number"
     )
     sequence_length: Optional[str] = Field(
         None, description="Minimum sequence length"
