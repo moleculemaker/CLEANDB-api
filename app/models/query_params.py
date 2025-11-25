@@ -3,12 +3,20 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from app.models.clean_data import UniqueValueField
 
 class ResponseFormat(str, Enum):
     """Enum for response format options."""
 
     JSON = "json"
     CSV = "csv"
+
+
+class SortOrder(str, Enum):
+    """Sort order options for list responses."""
+
+    ASC = "asc"
+    DESC = "desc"
 
 
 class CLEANSearchQueryParams(BaseModel):
@@ -87,4 +95,37 @@ class CLEANECLookupQueryParams(BaseModel):
     )
     limit: Optional[int] = Field(
         None, description="Maximum number of records to return"
+    )
+
+
+class CLEANUniqueValuesQueryParams(BaseModel):
+    """Query parameters for retrieving unique field values."""
+
+    field_name: UniqueValueField = Field(
+        ...,
+        description="Field to retrieve unique values from."
+    )
+    search: Optional[str] = Field(
+        None,
+        description="Optional substring filter applied to the field values.",
+        min_length=1,
+    )
+    limit: int = Field(
+        50,
+        ge=1,
+        le=1000,
+        description="Maximum number of unique values to return.",
+    )
+    offset: int = Field(
+        0,
+        ge=0,
+        description="Number of unique values to skip before returning results.",
+    )
+    sort: SortOrder = Field(
+        SortOrder.ASC,
+        description="Sort order for the returned values.",
+    )
+    include_null: bool = Field(
+        False,
+        description="Whether to include NULL values in the response.",
     )

@@ -9,9 +9,30 @@ from loguru import logger
 
 from app.core.config import settings
 from app.db.database import Database, get_db
-from app.db.queries import get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions
-from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams, ResponseFormat
-from app.models.clean_data import CLEANDataBase, CLEANECLookupResponse, CLEANECLookupMatch, CLEANSearchResponse, CLEANTypeaheadResponse
+from app.db.queries import (
+    get_ec_suggestions,
+    get_filtered_data,
+    get_total_count,
+    get_typeahead_suggestions,
+    get_unique_field_values,
+)
+from app.models.query_params import (
+    CLEANECLookupQueryParams,
+    CLEANSearchQueryParams,
+    CLEANTypeaheadQueryParams,
+    CLEANUniqueValuesQueryParams,
+    ResponseFormat,
+    SortOrder,
+)
+from app.models.clean_data import (
+    CLEANDataBase,
+    CLEANECLookupResponse,
+    CLEANECLookupMatch,
+    CLEANSearchResponse,
+    CLEANTypeaheadResponse,
+    CLEANUniqueValuesResponse,
+    UniqueValueField,
+)
 
 router = APIRouter(tags=["Search"])
 
@@ -223,6 +244,54 @@ async def get_data(
         logger.error(f"Error getting data: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving data: {str(e)}")
 
+
+def parse_unique_values_params(
+    field_name: UniqueValueField = Query(
+        ...,
+        description="Field to retrieve unique values from.",
+    ),
+    search: Optional[str] = Query(
+        None,
+        description="Optional substring filter applied to the field values.",
+        min_length=1,
+    ),
+    limit: int = Query(
+        50,
+        ge=1,
+        le=1000,
+        description="Maximum number of unique values to return.",
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="Number of unique values to skip before returning results.",
+    ),
+    sort: SortOrder = Query(
+        SortOrder.ASC,
+        description="Sort order for the returned values.",
+    ),
+    include_null: bool = Query(
+        False,
+        description="Whether to include NULL values in the response.",
+    ),
+) -> CLEANUniqueValuesQueryParams:
+    """Parse and validate unique value query parameters."""
+    try:
+        return CLEANUniqueValuesQueryParams(
+            field_name=field_name,
+            search=search,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            include_null=include_null,
+        )
+    except Exception as e:
+        logger.error(f"Error parsing unique value parameters: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid unique value parameters: {str(e)}",
+        )
+
 def parse_typeahead_params(
     field_name: Literal['accession', 'organism', 'protein_name', 'gene_name', 'uniprot_id'] = Query(
         'organism',
@@ -311,4 +380,31 @@ async def get_ec_lookup(
 
     except Exception as e:
         logger.error(f"Error getting data: {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving data: {str(e)}")
+
+
+@router.get("/unique-values", summary="Get unique values for a specific field.")
+async def get_unique_values(
+    params: CLEANUniqueValuesQueryParams = Depends(parse_unique_values_params),
+    db: Database = Depends(get_db),
+) -> CLEANUniqueValuesResponse:
+    """
+    Retrieve unique values for a given field. Supports basic filtering, pagination, and sorting.
+    """
+
+    try:
+        result = await get_unique_field_values(db, params)
+        return CLEANUniqueValuesResponse(
+            field_name=params.field_name,
+            search=params.search,
+            sort=params.sort.value,
+            limit=params.limit,
+            offset=params.offset,
+            total=result["total"],
+            values=result["values"],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Error getting unique values: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving data: {str(e)}")

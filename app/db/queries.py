@@ -3,8 +3,58 @@ from typing import Any, Dict, List, Tuple
 import rich
 import re
 from app.db.database import Database
-from app.models.clean_data import CLEANColumn
-from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams
+from app.models.clean_data import CLEANColumn, UniqueValueField
+from app.models.query_params import (
+    CLEANECLookupQueryParams,
+    CLEANSearchQueryParams,
+    CLEANTypeaheadQueryParams,
+    CLEANUniqueValuesQueryParams,
+    SortOrder,
+)
+
+
+UNIQUE_VALUE_CONFIG: Dict[UniqueValueField, Dict[str, Any]] = {
+    UniqueValueField.accession: {
+        "table": "cleandb.predictions_uniprot_annot",
+        "column": "accession",
+        "is_text": True,
+    },
+    UniqueValueField.organism: {
+        "table": "cleandb.predictions_uniprot_annot",
+        "column": "organism",
+        "is_text": True,
+    },
+    UniqueValueField.protein_name: {
+        "table": "cleandb.predictions_uniprot_annot",
+        "column": "protein_name",
+        "is_text": True,
+    },
+    UniqueValueField.gene_name: {
+        "table": "cleandb.predictions_uniprot_annot",
+        "column": "gene_name",
+        "is_text": True,
+    },
+    UniqueValueField.uniprot_id: {
+        "table": "cleandb.predictions_uniprot_annot",
+        "column": "uniprot_id",
+        "is_text": True,
+    },
+    UniqueValueField.curation_status: {
+        "table": "cleandb.predictions_uniprot_annot",
+        "column": "curation_status",
+        "is_text": True,
+    },
+    UniqueValueField.enzyme_function: {
+        "table": "cleandb.predictions_uniprot_annot",
+        "column": "enzyme_function",
+        "is_text": True,
+    },
+    UniqueValueField.ncbi_taxid: {
+        "table": "cleandb.predictions_uniprot_annot",
+        "column": "ncbi_taxid",
+        "is_text": False,
+    },
+}
 
 async def build_conditions(
     params: CLEANSearchQueryParams,
@@ -196,3 +246,61 @@ async def get_ec_suggestions(db: Database, params: CLEANECLookupQueryParams
     # Execute the query
     records = await db.fetch(query, number_search, name_search)
     return [{ 'ec_number': record['ec_number'], 'ec_name': record['ec_name'] } for record in records]
+
+
+async def get_unique_field_values(
+    db: Database,
+    params: CLEANUniqueValuesQueryParams,
+) -> Dict[str, Any]:
+    """Retrieve unique values for a given field."""
+    config = UNIQUE_VALUE_CONFIG.get(params.field_name)
+    if not config:
+        raise ValueError(f"Unsupported field for unique value lookup: {params.field_name}")
+
+    table = config["table"]
+    column = config["column"]
+    is_text = config.get("is_text", True)
+
+    where_clauses: List[str] = []
+    query_args: List[Any] = []
+    param_idx = 0
+
+    if not params.include_null:
+        where_clauses.append(f"{column} IS NOT NULL")
+        if is_text:
+            where_clauses.append(f"TRIM({column}) <> ''")
+
+    if params.search:
+        param_idx += 1
+        query_args.append(f"%{params.search.strip()}%")
+        if is_text:
+            where_clauses.append(f"{column} ILIKE ${param_idx}")
+        else:
+            where_clauses.append(f"{column}::text ILIKE ${param_idx}")
+
+    where_sql = " AND ".join(where_clauses) if where_clauses else "TRUE"
+    sort_direction = "ASC" if params.sort == SortOrder.ASC else "DESC"
+
+    distinct_query = f"""
+        SELECT DISTINCT {column} AS value
+        FROM {table}
+        WHERE {where_sql}
+        ORDER BY value {sort_direction}
+        LIMIT {params.limit}
+        OFFSET {params.offset}
+    """
+
+    records = await db.fetch(distinct_query, *query_args)
+    values = [record["value"] for record in records]
+
+    count_query = f"""
+        SELECT COUNT(*) AS total
+        FROM (
+            SELECT DISTINCT {column}
+            FROM {table}
+            WHERE {where_sql}
+        ) AS distinct_values
+    """
+    total = await db.fetchval(count_query, *query_args)
+
+    return {"values": values, "total": total}

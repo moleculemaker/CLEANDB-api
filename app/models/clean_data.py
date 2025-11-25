@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,19 @@ class CLEANColumn(Enum):
     clean_ec_number_array = "clean_ec_number_array"
     clean_ec_confidence_array = "clean_ec_confidence_array"
     annot_ec_number_array = "annot_ec_number_array"
+
+
+class UniqueValueField(str, Enum):
+    """Supported fields for unique value lookups."""
+
+    accession = "accession"
+    organism = "organism"
+    protein_name = "protein_name"
+    gene_name = "gene_name"
+    uniprot_id = "uniprot_id"
+    curation_status = "curation_status"
+    enzyme_function = "enzyme_function"
+    ncbi_taxid = "ncbi_taxid"
 
 
 class CLEANDataBase(BaseModel):
@@ -145,4 +158,37 @@ class CLEANECLookupResponse(BaseModel):
     matches: List[CLEANECLookupMatch] = Field(
         [],
         description="List of matches for the EC lookup."
+    )
+
+
+class CLEANUniqueValuesResponse(BaseModel):
+    """Model for responses returning unique field values."""
+
+    field_name: UniqueValueField = Field(
+        ...,
+        description="Field the unique values were retrieved from."
+    )
+    search: Optional[str] = Field(
+        None,
+        description="Optional search filter applied to the values."
+    )
+    sort: Literal["asc", "desc"] = Field(
+        "asc",
+        description="Sort order applied to the returned values."
+    )
+    limit: int = Field(
+        ...,
+        description="Maximum number of values returned."
+    )
+    offset: int = Field(
+        ...,
+        description="Number of values skipped before returning results."
+    )
+    total: int = Field(
+        ...,
+        description="Total number of unique values matching the filters."
+    )
+    values: List[Any] = Field(
+        default_factory=list,
+        description="Unique values for the requested field."
     )
