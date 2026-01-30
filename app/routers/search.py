@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.db.database import Database, get_db
 from app.db.queries import get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams, ResponseFormat
-from app.models.clean_data import CLEANDataBase, CLEANECLookupResponse, CLEANECLookupMatch, CLEANSearchResponse, CLEANTypeaheadResponse
+from app.models.clean_data import CLEANDataBase, CLEANECLookupResponse, CLEANECLookupMatch, CLEANSearchResponse, CLEANTypeaheadResponse, CurationStatusOption, CLEANCurationStatusResponse
 
 router = APIRouter(tags=["Search"])
 
@@ -41,6 +41,10 @@ def parse_query_params(
     uniprot: Optional[List[str]] = Query(
         None,
         description="Uniprot ID"
+    ),
+    curation_status: Optional[List[str]] = Query(
+        None,
+        description="Curation status (reviewed/unreviewed)"
     ),
     # Additional filters
     clean_ec_confidence_min: Optional[float] = Query(
@@ -77,6 +81,7 @@ def parse_query_params(
             clean_ec_confidence_max = clean_ec_confidence_max,
             sequence_length = sequence_length,
             uniprot_id = uniprot,
+            curation_status=curation_status,
             format=format,
             limit=limit,
             offset=offset,
@@ -228,7 +233,7 @@ async def get_data(
         raise HTTPException(status_code=500, detail=f"Error retrieving data: {str(e)}")
 
 def parse_typeahead_params(
-    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name', 'uniprot_id'] = Query(
+    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name', 'uniprot_id', 'predicted_ec'] = Query(
         'organism',
         description="Which field to search in",
     ),
@@ -236,19 +241,95 @@ def parse_typeahead_params(
         None,
         min_length=3,
         description="Search term for typeahead suggestions (minimum 3 characters)"
-    )
+    ),
+    limit: Optional[int] = Query(
+        20, description="Maximum number of records to return"
+    ),
+    offset: Optional[int] = Query(
+        0, description="Number of records to skip"
+    ),
+    # Search context filters
+    accession: Optional[List[str]] = Query(
+        None, description="Filter typeahead results by accession"
+    ),
+    organism: Optional[List[str]] = Query(
+        None, description="Filter typeahead results by organism"
+    ),
+    protein: Optional[List[str]] = Query(
+        None, description="Filter typeahead results by protein name"
+    ),
+    gene_name: Optional[List[str]] = Query(
+        None, description="Filter typeahead results by gene name"
+    ),
+    ec_number: Optional[List[str]] = Query(
+        None, description="Filter typeahead results by CLEAN EC number"
+    ),
+    uniprot: Optional[List[str]] = Query(
+        None, description="Filter typeahead results by uniprot ID"
+    ),
+    curation_status: Optional[List[str]] = Query(
+        None, description="Filter typeahead results by curation status"
+    ),
+    clean_ec_confidence_min: Optional[float] = Query(
+        None, description="Filter typeahead results by minimum CLEAN EC confidence"
+    ),
+    clean_ec_confidence_max: Optional[float] = Query(
+        None, description="Filter typeahead results by maximum CLEAN EC confidence"
+    ),
+    sequence_length: Optional[str] = Query(
+        None, description="Filter typeahead results by minimum sequence length"
+    ),
 ) -> CLEANTypeaheadQueryParams:
     """Parse and validate query parameters."""
     try:
         return CLEANTypeaheadQueryParams(
             field_name=field_name,
             search=search,
+            limit=limit,
+            offset=offset,
+            accession=accession,
+            organism=organism,
+            protein_name=protein,
+            gene_name=gene_name,
+            clean_ec_number=ec_number,
+            uniprot_id=uniprot,
+            curation_status=curation_status,
+            clean_ec_confidence_min=clean_ec_confidence_min,
+            clean_ec_confidence_max=clean_ec_confidence_max,
+            sequence_length=sequence_length,
         )
     except Exception as e:
         logger.error(f"Error parsing query parameters: {e}")
         raise HTTPException(
             status_code=400, detail=f"Invalid query parameters: {str(e)}"
         )
+
+
+def _build_search_context(params: CLEANTypeaheadQueryParams) -> Optional[dict]:
+    """Build the search context dict from non-None context params."""
+    context = {}
+    if params.accession:
+        context['accession'] = params.accession
+    if params.organism:
+        context['organism'] = params.organism
+    if params.protein_name:
+        context['protein_name'] = params.protein_name
+    if params.gene_name:
+        context['gene_name'] = params.gene_name
+    if params.clean_ec_number:
+        context['ec_number'] = params.clean_ec_number
+    if params.uniprot_id:
+        context['uniprot'] = params.uniprot_id
+    if params.curation_status:
+        context['curation_status'] = params.curation_status
+    if params.clean_ec_confidence_min is not None:
+        context['clean_ec_confidence_min'] = params.clean_ec_confidence_min
+    if params.clean_ec_confidence_max is not None:
+        context['clean_ec_confidence_max'] = params.clean_ec_confidence_max
+    if params.sequence_length:
+        context['sequence_length'] = params.sequence_length
+    return context if context else None
+
 
 @router.get("/typeahead", summary="Get typeahead suggestions for searching the database of predicted EC numbers.")
 async def get_typeahead(
@@ -261,19 +342,91 @@ async def get_typeahead(
     """
 
     try:
-        params.limit = 20
+        limit = params.limit or 20
+        offset = params.offset or 0
+
         # Get data from database
-        data = await get_typeahead_suggestions(db, params)
+        matches, total = await get_typeahead_suggestions(db, params)
+
+        # Build search context
+        search_context = _build_search_context(params)
+
+        # Build pagination URLs
+        next_url = None
+        previous_url = None
+
+        if request:
+            base_url = str(request.url).split("?")[0]
+
+            # Build base query params (excluding pagination)
+            base_params = {
+                "field_name": params.field_name,
+                "search": params.search,
+                "limit": limit,
+            }
+
+            # Add context params if present
+            if params.accession:
+                base_params["accession"] = params.accession
+            if params.organism:
+                base_params["organism"] = params.organism
+            if params.protein_name:
+                base_params["protein"] = params.protein_name
+            if params.gene_name:
+                base_params["gene_name"] = params.gene_name
+            if params.clean_ec_number:
+                base_params["ec_number"] = params.clean_ec_number
+            if params.uniprot_id:
+                base_params["uniprot"] = params.uniprot_id
+            if params.curation_status:
+                base_params["curation_status"] = params.curation_status
+            if params.clean_ec_confidence_min is not None:
+                base_params["clean_ec_confidence_min"] = params.clean_ec_confidence_min
+            if params.clean_ec_confidence_max is not None:
+                base_params["clean_ec_confidence_max"] = params.clean_ec_confidence_max
+            if params.sequence_length:
+                base_params["sequence_length"] = params.sequence_length
+
+            # Next page
+            if offset + limit < total:
+                next_params = {**base_params, "offset": offset + limit}
+                next_url = f"{base_url}?{urlencode(next_params, doseq=True)}"
+
+            # Previous page
+            if offset > 0:
+                prev_offset = max(0, offset - limit)
+                prev_params = {**base_params, "offset": prev_offset}
+                previous_url = f"{base_url}?{urlencode(prev_params, doseq=True)}"
 
         return CLEANTypeaheadResponse(
             field_name=params.field_name,
             search=params.search,
-            matches=data
+            matches=matches,
+            search_context=search_context,
+            total=total,
+            limit=limit,
+            offset=offset,
+            next=next_url,
+            previous=previous_url,
         )
 
     except Exception as e:
         logger.error(f"Error getting data: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving data: {str(e)}")
+
+
+@router.get("/curation-statuses", summary="Get available curation status options")
+async def get_curation_statuses() -> CLEANCurationStatusResponse:
+    """
+    Get the list of available curation status options for filtering.
+    """
+    return CLEANCurationStatusResponse(
+        statuses=[
+            CurationStatusOption(value="reviewed", label="Reviewed (Swiss-Prot)"),
+            CurationStatusOption(value="unreviewed", label="Unreviewed (TrEMBL)"),
+        ]
+    )
+
 
 def parse_ec_lookup_params(
     search: str = Query(

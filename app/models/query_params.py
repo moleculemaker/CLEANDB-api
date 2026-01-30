@@ -51,6 +51,9 @@ class CLEANSearchQueryParams(BaseModel):
     sequence_length: Optional[str] = Field(
         None, description="Minimum sequence length"
     )
+    curation_status: Optional[List[str]] = Field(
+        None, description="Curation status filter (reviewed/unreviewed), case-insensitive exact match (multiple values allowed, OR logic)"
+    )
 
     # Numeric range filters (removed as requested)
 
@@ -68,7 +71,7 @@ class CLEANSearchQueryParams(BaseModel):
 class CLEANTypeaheadQueryParams(BaseModel):
     """Query parameters for CLEAN typeahead suggestions."""
 
-    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name', 'uniprot_id'] = Field(
+    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name', 'uniprot_id', 'predicted_ec'] = Field(
         'organism',
         description="Which field to search in",
     )
@@ -79,6 +82,41 @@ class CLEANTypeaheadQueryParams(BaseModel):
     )
     limit: Optional[int] = Field(
         None, description="Maximum number of records to return"
+    )
+    offset: Optional[int] = Field(
+        0, description="Number of records to skip for pagination"
+    )
+
+    # Search context fields - when provided, typeahead results are filtered to match the current search context
+    accession: Optional[List[str]] = Field(
+        None, description="Filter typeahead results by accession"
+    )
+    organism: Optional[List[str]] = Field(
+        None, description="Filter typeahead results by organism"
+    )
+    protein_name: Optional[List[str]] = Field(
+        None, description="Filter typeahead results by protein name"
+    )
+    gene_name: Optional[List[str]] = Field(
+        None, description="Filter typeahead results by gene name"
+    )
+    uniprot_id: Optional[List[str]] = Field(
+        None, description="Filter typeahead results by uniprot ID"
+    )
+    clean_ec_number: Optional[List[str]] = Field(
+        None, description="Filter typeahead results by CLEAN EC number"
+    )
+    curation_status: Optional[List[str]] = Field(
+        None, description="Filter typeahead results by curation status"
+    )
+    clean_ec_confidence_min: Optional[float] = Field(
+        None, description="Filter typeahead results by minimum CLEAN EC confidence"
+    )
+    clean_ec_confidence_max: Optional[float] = Field(
+        None, description="Filter typeahead results by maximum CLEAN EC confidence"
+    )
+    sequence_length: Optional[str] = Field(
+        None, description="Filter typeahead results by minimum sequence length"
     )
 
 class CLEANECLookupQueryParams(BaseModel):

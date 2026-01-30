@@ -112,7 +112,7 @@ class CLEANSearchResponse(BaseModel):
 
 class CLEANTypeaheadResponse(BaseModel):
     """Model for the response of a CLEAN typeahead query."""
-    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name', 'uniprot_id'] = Field(
+    field_name: Literal['accession', 'organism', 'protein_name', 'gene_name', 'uniprot_id', 'predicted_ec'] = Field(
         'organism',
         description="Which field to search in",
     ),
@@ -124,6 +124,30 @@ class CLEANTypeaheadResponse(BaseModel):
     matches: List[str] = Field(
         [],
         description="List of results matching the search term."
+    )
+    search_context: Optional[dict] = Field(
+        None,
+        description="The search context filters that were applied to the typeahead query."
+    )
+    total: int = Field(
+        0,
+        description="Total number of matching results (before pagination)."
+    )
+    limit: int = Field(
+        20,
+        description="Maximum number of results returned."
+    )
+    offset: int = Field(
+        0,
+        description="Number of results skipped."
+    )
+    next: Optional[str] = Field(
+        None,
+        description="Link to the next page of results."
+    )
+    previous: Optional[str] = Field(
+        None,
+        description="Link to the previous page of results."
     )
 
 class CLEANECLookupMatch(BaseModel):
@@ -145,4 +169,24 @@ class CLEANECLookupResponse(BaseModel):
     matches: List[CLEANECLookupMatch] = Field(
         [],
         description="List of matches for the EC lookup."
+    )
+
+
+class CurationStatusOption(BaseModel):
+    """Model for a curation status option."""
+    value: str = Field(
+        ...,
+        description="The value of the curation status (e.g., 'reviewed', 'unreviewed')."
+    )
+    label: str = Field(
+        ...,
+        description="The human-readable label for the curation status."
+    )
+
+
+class CLEANCurationStatusResponse(BaseModel):
+    """Model for the response of the curation statuses endpoint."""
+    statuses: List[CurationStatusOption] = Field(
+        [],
+        description="List of available curation status options."
     )
