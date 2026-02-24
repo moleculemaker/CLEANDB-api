@@ -99,19 +99,14 @@ async def get_data(
     """
 
     try:
-        # # Get total count for the query (without pagination)
-        # total_count = await get_total_count(db, params)
+        # Apply default page size if no explicit limit provided
+        if params.limit is None:
+            params.limit = settings.AUTO_PAGINATION_THRESHOLD
 
-        # # Apply automatic pagination if results exceed threshold and no explicit limit provided
-        # if total_count > settings.AUTO_PAGINATION_THRESHOLD and params.limit is None:
-        #     params.auto_paginated = True
-        #     params.limit = settings.AUTO_PAGINATION_THRESHOLD
-        #     logger.info(
-        #         f"Auto-pagination applied. Results limited to {params.limit} records."
-        #     )
+        # Get total count for the query (without pagination)
+        total_count = await get_total_count(db, params)
 
-        params.limit = 500
-        # Get data from database (now with potential auto-pagination applied)
+        # Get data from database
         data = await get_filtered_data(db, params)
 
         # Handle response format
@@ -143,12 +138,10 @@ async def get_data(
                 headers={"Content-Disposition": "attachment; filename=CLEAN_data.csv"},
             )
         else:
-            # TODO don't we want total_count to be the value returned by get_total_count?
-            total_count = len(data)
             response = CLEANSearchResponse(
                 total=total_count,
                 offset=params.offset,
-                limit=total_count if total_count < params.limit else params.limit,
+                limit=params.limit,
                 data=[CLEANDataBase(
                     predictions_uniprot_annot_id=record["predictions_uniprot_annot_id"],
                     uniprot=record["uniprot_id"],
@@ -172,54 +165,48 @@ async def get_data(
                 ) for record in data],
             )
 
-            # Add pagination links if automatic pagination was applied
-            if params.auto_paginated:
-                # Add flag indicating automatic pagination was applied
-                response.auto_paginated = True
+            # Add pagination links
+            if request:
+                base_url = str(request.url).split("?")[0]
 
-                if request:
-                    base_url = str(request.url).split("?")[0]
+                # Prepare query parameters for pagination links
+                query_params = {
+                    k: v
+                    for k, v in params.model_dump().items()
+                    if k not in ["auto_paginated", "offset", "limit"]
+                    and v is not None
+                }
 
-                    # Prepare query parameters for pagination links
-                    # For Pydantic v2 compatibility
-                    query_params = {
-                        k: v
-                        for k, v in params.model_dump().items()
-                        if k not in ["auto_paginated", "offset", "limit"]
-                        and v is not None
+                # Set format explicitly if it was provided
+                if params.format != ResponseFormat.JSON:
+                    query_params["format"] = params.format
+
+                current_offset = params.offset or 0
+                current_limit = params.limit
+
+                # Next page link if there are more records
+                if current_offset + current_limit < total_count:
+                    next_offset = current_offset + current_limit
+                    next_params = {
+                        **query_params,
+                        "offset": next_offset,
+                        "limit": current_limit,
                     }
+                    response.next = (
+                        f"{base_url}?{urlencode(next_params, doseq=True)}"
+                    )
 
-                    # Set format explicitly if it was provided
-                    if params.format != ResponseFormat.JSON:
-                        query_params["format"] = params.format
-
-                    # Calculate next page link if there are more records
-                    current_offset = params.offset or 0
-                    current_limit = params.limit or total_count
-                    if current_offset + current_limit < total_count:
-                        next_offset = current_offset + current_limit
-                        next_params = {
-                            **query_params,
-                            "offset": next_offset,
-                            "limit": current_limit,
-                        }
-                        response.next = (
-                            f"{base_url}?{urlencode(next_params, doseq=True)}"
-                        )
-
-                    # Calculate previous page link if not on first page
-                    current_offset = params.offset or 0
-                    current_limit = params.limit or total_count
-                    if current_offset > 0:
-                        prev_offset = max(0, current_offset - current_limit)
-                        prev_params = {
-                            **query_params,
-                            "offset": prev_offset,
-                            "limit": current_limit,
-                        }
-                        response.previous = (
-                            f"{base_url}?{urlencode(prev_params, doseq=True)}"
-                        )
+                # Previous page link if not on first page
+                if current_offset > 0:
+                    prev_offset = max(0, current_offset - current_limit)
+                    prev_params = {
+                        **query_params,
+                        "offset": prev_offset,
+                        "limit": current_limit,
+                    }
+                    response.previous = (
+                        f"{base_url}?{urlencode(prev_params, doseq=True)}"
+                    )
 
             return response
 
