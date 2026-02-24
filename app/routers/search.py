@@ -60,6 +60,11 @@ def parse_query_params(
         None, description="Maximum number of records to return"
     ),
     offset: Optional[int] = Query(0, description="Number of records to skip"),
+    ordering: Optional[str] = Query(
+        None,
+        description="Column to sort by. Prefix with '-' for descending order. "
+        "Allowed values: accession, amino_acids, organism, curation_status, predicted_ec",
+    ),
 ) -> CLEANSearchQueryParams:
     """Parse and validate query parameters."""
     try:
@@ -80,6 +85,7 @@ def parse_query_params(
             format=format,
             limit=limit,
             offset=offset,
+            ordering=ordering,
         )
     except Exception as e:
         logger.error(f"Error parsing query parameters: {e}")

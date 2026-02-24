@@ -83,7 +83,37 @@ async def build_conditions(
 
     return where_clause, query_params
 
-def get_query(columns_to_select: str, where_clause: str, include_order_by: bool = True) -> str:
+SORTABLE_COLUMNS = {
+    "accession": "pua.accession",
+    "amino_acids": "pua.amino_acids",
+    "organism": "pua.organism",
+    "curation_status": "pua.curation_status",
+    "predicted_ec": "puace.max_clean_ec_confidence",
+}
+
+DEFAULT_ORDER_BY = "puace.max_clean_ec_confidence DESC, pua.amino_acids ASC, pua.predictions_uniprot_annot_id ASC"
+
+
+def parse_ordering(ordering: str | None) -> str:
+    """Parse an ordering string like '-accession' into a SQL ORDER BY clause.
+
+    Returns the default ordering if ordering is None or invalid.
+    """
+    if not ordering:
+        return DEFAULT_ORDER_BY
+
+    descending = ordering.startswith("-")
+    field = ordering.lstrip("-")
+
+    if field not in SORTABLE_COLUMNS:
+        return DEFAULT_ORDER_BY
+
+    direction = "DESC" if descending else "ASC"
+    col = SORTABLE_COLUMNS[field]
+    return f"{col} {direction}, pua.predictions_uniprot_annot_id ASC"
+
+
+def get_query(columns_to_select: str, where_clause: str, include_order_by: bool = True, ordering: str | None = None) -> str:
     query = f"""
     SELECT
         {columns_to_select}
@@ -94,8 +124,8 @@ def get_query(columns_to_select: str, where_clause: str, include_order_by: bool 
         ON puae.predictions_uniprot_annot_id = pua.predictions_uniprot_annot_id
     WHERE {where_clause}"""
     if include_order_by:
-        query += """
-    ORDER BY puace.max_clean_ec_confidence DESC, pua.amino_acids ASC, pua.predictions_uniprot_annot_id ASC"""
+        query += f"""
+    ORDER BY {parse_ordering(ordering)}"""
     return query
 
 async def get_filtered_data(
@@ -122,7 +152,7 @@ async def get_filtered_data(
     """
 
     # Build the main query
-    query = get_query(columns_to_select, where_clause)
+    query = get_query(columns_to_select, where_clause, ordering=params.ordering)
 
     # Add pagination
     if params.limit is not None:

@@ -64,6 +64,11 @@ class CLEANSearchQueryParams(BaseModel):
         None, description="Maximum number of records to return"
     )
     offset: Optional[int] = Field(0, description="Number of records to skip")
+    ordering: Optional[str] = Field(
+        None,
+        description="Column to sort by. Prefix with '-' for descending order. "
+        "Allowed values: accession, amino_acids, organism, curation_status, predicted_ec",
+    )
 
 class CLEANTypeaheadQueryParams(BaseModel):
     """Query parameters for CLEAN typeahead suggestions."""
