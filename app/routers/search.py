@@ -105,8 +105,102 @@ async def get_data(
     db: Database = Depends(get_db),
     request: Request = None,
 ) -> CLEANSearchResponse:
-    """
-    Get enzyme kinetic data with filtering options.
+    r"""
+Get enzyme records and CLEAN-predicted EC numbers with filtering options.
+
+This endpoint allows querying the CLEAN Database with various filters across UniProt
+metadata and CLEAN prediction confidence ranges.
+
+Filters that accept multiple values on the same parameter (e.g. `organism`) are combined
+with OR logic, while filters on different parameters are combined with AND logic.
+
+The response format can be either JSON (default) or CSV. Results are automatically
+paginated when no explicit `limit` is provided.
+
+### URL examples
+
+- /api/v1/search?organism=Homo%20sapiens&organism=Mus%20musculus
+
+- /api/v1/search?ec_number=1.1.1.1&clean_ec_confidence_min=0.8
+
+- /api/v1/search?curation_status=reviewed&format=csv&limit=100
+
+### Python example: retrieving JSON data
+
+```python
+import requests
+
+# Query CLEAN records filtered by organism and CLEAN-prediction confidence
+params = {
+    "organism": ["Escherichia coli", "Homo sapiens"],   # OR within the same param
+    "clean_ec_confidence_min": 0.8,                       # CLEAN confidence floor
+    "curation_status": "reviewed",                        # Swiss-Prot only
+    "limit": 10,
+}
+
+response = requests.get(
+    "https://fastapi.cleandb.mmli2.ncsa.illinois.edu/api/v1/search",
+    params=params,
+)
+
+if response.status_code == 200:
+    payload = response.json()
+    print(f"Total matching records: {payload['total']}")
+    print(f"Returned in this page: {len(payload['data'])}")
+
+    if payload["data"]:
+        first = payload["data"][0]
+        print("\nFirst record:")
+        print(f"  Accession: {first['accession']}")
+        print(f"  Protein:   {first['protein']}")
+        print(f"  Organism:  {first['organism']}")
+        # CLEAN-predicted EC numbers are returned as a list of {ec_number, score}
+        for prediction in first.get("predicted_ec") or []:
+            print(f"  CLEAN EC:  {prediction['ec_number']} (score={prediction['score']:.3f})")
+
+    # Follow pagination links if present
+    if payload.get("next"):
+        print(f"\nNext page: {payload['next']}")
+else:
+    print(f"Error: {response.status_code} - {response.text}")
+```
+
+### Python example: downloading filtered results as CSV
+
+```python
+import csv
+import requests
+from io import StringIO
+
+params = {
+    "ec_number": ["1.1.1.1", "2.7.1.1"],
+    "format": "csv",
+    "limit": 50,
+}
+
+response = requests.get(
+    "https://fastapi.cleandb.mmli2.ncsa.illinois.edu/api/v1/search",
+    params=params,
+)
+
+if response.status_code == 200:
+    # Save the CSV response to disk
+    with open("clean_search_export.csv", "w", newline="") as fh:
+        fh.write(response.text)
+    print("Saved clean_search_export.csv")
+
+    # Preview the first few rows
+    reader = csv.DictReader(StringIO(response.text))
+    for i, row in enumerate(reader):
+        if i >= 3:
+            break
+        print(f"\nRecord {i + 1}:")
+        print(f"  Accession: {row.get('accession')}")
+        print(f"  Organism:  {row.get('organism')}")
+        print(f"  Amino acids: {row.get('amino_acids')}")
+else:
+    print(f"Error: {response.status_code} - {response.text}")
+```
     """
 
     try:
@@ -330,8 +424,67 @@ async def get_typeahead(
     db: Database = Depends(get_db),
     request: Request = None,
 ) -> CLEANTypeaheadResponse:
-    """
-    Get typeahead suggestions for searching the database of predicted EC numbers.
+    r"""
+Get autocomplete suggestions for a chosen field, optionally constrained by a search context.
+
+Use `field_name` to choose which column to search (`accession`, `organism`, `protein_name`,
+`gene_name`, `uniprot_id`, or `predicted_ec`). The `search` term must be at least 3 characters.
+
+Optionally pass any of the `/search` filter parameters (e.g. `organism`, `curation_status`,
+`clean_ec_confidence_min`) to scope the suggestions to records that already match those filters.
+
+### URL examples
+
+- /api/v1/typeahead?field_name=organism&search=esch
+
+- /api/v1/typeahead?field_name=protein_name&search=kin&organism=Homo%20sapiens
+
+- /api/v1/typeahead?field_name=predicted_ec&search=1.1.1&clean_ec_confidence_min=0.7
+
+### Python example: simple autocomplete
+
+```python
+import requests
+
+response = requests.get(
+    "https://fastapi.cleandb.mmli2.ncsa.illinois.edu/api/v1/typeahead",
+    params={"field_name": "organism", "search": "esch", "limit": 10},
+)
+
+if response.status_code == 200:
+    payload = response.json()
+    print(f"Field: {payload['field_name']}, query: {payload['search']!r}")
+    print(f"Total matches: {payload['total']}")
+    for match in payload["matches"]:
+        print(f"  - {match}")
+else:
+    print(f"Error: {response.status_code} - {response.text}")
+```
+
+### Python example: autocomplete scoped by a search context
+
+```python
+import requests
+
+# Look up protein names that contain "kin" — but only within Homo sapiens records
+response = requests.get(
+    "https://fastapi.cleandb.mmli2.ncsa.illinois.edu/api/v1/typeahead",
+    params={
+        "field_name": "protein_name",
+        "search": "kin",
+        "organism": "Homo sapiens",
+        "curation_status": "reviewed",
+    },
+)
+
+if response.status_code == 200:
+    payload = response.json()
+    print(f"Search context applied: {payload.get('search_context')}")
+    for match in payload["matches"][:5]:
+        print(f"  - {match}")
+else:
+    print(f"Error: {response.status_code} - {response.text}")
+```
     """
 
     try:
@@ -410,8 +563,32 @@ async def get_typeahead(
 
 @router.get("/curation-statuses", summary="Get available curation status options")
 async def get_curation_statuses() -> CLEANCurationStatusResponse:
-    """
-    Get the list of available curation status options for filtering.
+    r"""
+Get the list of available curation status options that can be used with the `curation_status`
+filter on `/search` and `/typeahead`.
+
+### URL example
+
+- /api/v1/curation-statuses
+
+### Python example
+
+```python
+import requests
+
+response = requests.get(
+    "https://fastapi.cleandb.mmli2.ncsa.illinois.edu/api/v1/curation-statuses",
+)
+
+if response.status_code == 200:
+    for option in response.json()["statuses"]:
+        print(f"{option['value']:>11}  ->  {option['label']}")
+    # Expected output:
+    #    reviewed  ->  Reviewed (Swiss-Prot)
+    #  unreviewed  ->  Unreviewed (TrEMBL)
+else:
+    print(f"Error: {response.status_code} - {response.text}")
+```
     """
     return CLEANCurationStatusResponse(
         statuses=[
@@ -445,8 +622,36 @@ async def get_ec_lookup(
     db: Database = Depends(get_db),
     request: Request = None,
 ) -> CLEANECLookupResponse:
-    """
-    Look up EC numbers or classes based on a search term.
+    r"""
+Look up EC numbers or EC classes by partial number or descriptive name.
+
+Useful for resolving free-text user input into canonical EC numbers before calling
+`/search` with the `ec_number` filter.
+
+### URL examples
+
+- /api/v1/ec_lookup?search=1.1.1
+
+- /api/v1/ec_lookup?search=oxidoreductase
+
+### Python example
+
+```python
+import requests
+
+response = requests.get(
+    "https://fastapi.cleandb.mmli2.ncsa.illinois.edu/api/v1/ec_lookup",
+    params={"search": "1.1.1"},
+)
+
+if response.status_code == 200:
+    payload = response.json()
+    print(f"Matches for {payload['search']!r}:")
+    for match in payload["matches"][:5]:
+        print(f"  {match['ec_number']}  -  {match['ec_name']}")
+else:
+    print(f"Error: {response.status_code} - {response.text}")
+```
     """
 
     try:
