@@ -1,6 +1,6 @@
 # CLEAN Data API
 
-A FastAPI application providing access to enzyme kinetic data from the CLEAN database.
+A FastAPI application providing access to enzyme function data from the CLEAN database.
 
 ## Local Setup
 
