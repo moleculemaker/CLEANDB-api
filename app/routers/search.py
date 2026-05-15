@@ -99,7 +99,7 @@ def parse_query_params(
         )
 
 
-@router.get("/search", summary="Get enzyme kinetic data")
+@router.get("/search", summary="Get enzyme function data")
 async def get_data(
     params: CLEANSearchQueryParams = Depends(parse_query_params),
     db: Database = Depends(get_db),
