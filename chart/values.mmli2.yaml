@@ -44,6 +44,7 @@ service:
 ingress:
   enabled: true
   hostname: "fastapi.cleandb.mmli2.ncsa.illinois.edu"
+  extraHosts: "cleandb-api.platform.moleculemaker.org"
   tls: true
   className: traefik
   annotations:
