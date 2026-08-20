@@ -43,7 +43,8 @@ service:
 # Define whether / how to access this application over the public internet
 ingress:
   enabled: true
-  hostname: "fastapi.cleandb.mmli1.ncsa.illinois.edu"
+  hostname: "fastapi.cleandb.mmli2.ncsa.illinois.edu"
+  extraHosts: []
   tls: true
   className: traefik
   annotations:
