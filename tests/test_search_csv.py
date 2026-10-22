@@ -106,6 +106,15 @@ def test_csv_with_limit_is_not_capped(client, db_calls, monkeypatch):
     assert db_calls.streamed_params[0].offset == 100
 
 
+def test_csv_accepts_limits_above_json_cap(client, db_calls):
+    for limit in (settings.AUTO_PAGINATION_THRESHOLD + 1, search.MAX_SEARCH_LIMIT):
+        parse(get_csv(client, f"limit={limit}"))
+
+    assert [p.limit for p in db_calls.streamed_params] == [
+        settings.AUTO_PAGINATION_THRESHOLD + 1, search.MAX_SEARCH_LIMIT,
+    ]
+
+
 def test_csv_db_error_mid_result_returns_500(client):
     async def failing_rows(db, params):
         yield make_row()

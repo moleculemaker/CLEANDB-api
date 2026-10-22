@@ -5,6 +5,7 @@ from typing import Any, AsyncIterator, Dict, Iterator, List, Literal, Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 from loguru import logger
@@ -117,7 +118,9 @@ def parse_query_params(
         default=ResponseFormat.JSON, description="Response format (json or csv)"
     ),
     limit: Optional[int] = Query(
-        None, ge=1, le=MAX_SEARCH_LIMIT, description="Maximum number of records to return"
+        None, ge=1, le=MAX_SEARCH_LIMIT,
+        description="Maximum number of records to return "
+        f"(at most {settings.AUTO_PAGINATION_THRESHOLD} for JSON, {MAX_SEARCH_LIMIT} for CSV)"
     ),
     offset: Optional[int] = Query(0, ge=0, le=MAX_BIGINT, description="Number of records to skip"),
     ordering: Optional[str] = Query(
@@ -127,6 +130,19 @@ def parse_query_params(
     ),
 ) -> CLEANSearchQueryParams:
     """Parse and validate query parameters."""
+    # JSON is paginated, so a JSON page is never larger than the default page size.
+    # Shaped like the le= error on limit, so both caps fail the same way.
+    max_json_limit = settings.AUTO_PAGINATION_THRESHOLD
+    if format == ResponseFormat.JSON and limit is not None and limit > max_json_limit:
+        raise RequestValidationError([{
+            "type": "less_than_equal",
+            "loc": ("query", "limit"),
+            "msg": f"Input should be less than or equal to {max_json_limit} for JSON responses; "
+            "page with offset, or use format=csv",
+            "input": str(limit),
+            "ctx": {"le": max_json_limit},
+        }])
+
     try:
         # Validate format
         if format not in [fmt for fmt in ResponseFormat]:
@@ -171,9 +187,10 @@ Filters that accept multiple values on the same parameter (e.g. `organism`) are 
 with OR logic, while filters on different parameters are combined with AND logic.
 
 The response format can be either JSON (default) or CSV. JSON results are automatically
-paginated when no explicit `limit` is provided. CSV results are not paginated: without a
-`limit`, every matching record is returned, up to 100,000; a query that matches more is
-rejected with a 400.
+paginated when no explicit `limit` is provided, and an explicit JSON `limit` can be no larger
+than that page size (`AUTO_PAGINATION_THRESHOLD`, 5,000 by default). CSV results are not
+paginated: without a `limit`, every matching record is returned, up to 100,000; a query that
+matches more is rejected with a 400.
 
 ### URL examples
 
