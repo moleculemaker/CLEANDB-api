@@ -20,11 +20,6 @@ async def get_connection() -> asyncpg.Connection:
 
 async def get_connection_pool() -> asyncpg.Pool:
     """Get a database connection pool."""
-    print(settings.CLEAN_DB_USER)
-    print(settings.CLEAN_DB_PORT)
-    print(settings.CLEAN_DB_NAME)
-    print(settings.CLEAN_DB_PASSWORD)
-    print(settings.CLEAN_DB_HOST)
     pool = await asyncpg.create_pool(
         user=settings.CLEAN_DB_USER,
         password=settings.CLEAN_DB_PASSWORD,
