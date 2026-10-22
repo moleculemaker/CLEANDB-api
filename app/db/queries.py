@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Tuple
+from typing import Any, AsyncIterator, Dict, List, Tuple
 
 import rich
 import re
@@ -138,10 +138,8 @@ def get_query(columns_to_select: str, where_clause: str, include_order_by: bool 
     ORDER BY {parse_ordering(ordering)}"""
     return query
 
-async def get_filtered_data(
-    db: Database, params: CLEANSearchQueryParams
-) -> List[Dict[str, Any]]:
-    """Get filtered data from the database."""
+async def build_data_query(params: CLEANSearchQueryParams) -> Tuple[str, List[Any]]:
+    """Build the filtered data query and its arguments."""
     where_clause, query_params = await build_conditions(params)
 
     columns_to_select = """
@@ -173,11 +171,36 @@ async def get_filtered_data(
 
     rich.print(f"{query=}")
     # Extract query parameters from the dictionary
-    query_args = list(query_params.values())
+    return query, list(query_params.values())
 
-    # Execute the query
-    records = await db.fetch(query, *query_args)
-    return records
+
+async def get_filtered_data(
+    db: Database, params: CLEANSearchQueryParams
+) -> List[Dict[str, Any]]:
+    """Get filtered data from the database."""
+    query, query_args = await build_data_query(params)
+    return await db.fetch(query, *query_args)
+
+
+async def iter_filtered_data(
+    db: Database, params: CLEANSearchQueryParams
+) -> AsyncIterator[Dict[str, Any]]:
+    """Stream filtered data from the database."""
+    query, query_args = await build_data_query(params)
+    async for record in db.iterate(query, *query_args):
+        yield record
+
+
+async def has_more_rows_than(db: Database, params: CLEANSearchQueryParams, n: int) -> bool:
+    """Check whether more than n records match the filters, starting at params.offset."""
+    where_clause, query_params = await build_conditions(params)
+
+    # Stops at the first row past n instead of counting every match
+    query = f"""SELECT EXISTS (
+        {get_query("1", where_clause, include_order_by=False)}
+    OFFSET {(params.offset or 0) + n})"""
+
+    return await db.fetchval(query, *query_params.values())
 
 
 async def get_total_count(db: Database, params: CLEANSearchQueryParams) -> int:

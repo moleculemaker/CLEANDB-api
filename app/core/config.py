@@ -12,6 +12,8 @@ class Settings(BaseSettings):
 
     # API behavior configuration
     AUTO_PAGINATION_THRESHOLD: int = 5000
+    # Most records a single CSV search response may contain
+    CSV_MAX_ROWS: int = 100_000
 
     # CORS configuration
     CORS_ORIGINS: List[str] = ["*"]

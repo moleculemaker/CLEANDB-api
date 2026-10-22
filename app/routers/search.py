@@ -1,6 +1,6 @@
 import csv
 from io import StringIO
-from typing import Any, List, Literal, Optional
+from typing import Any, AsyncIterator, Dict, List, Literal, Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -9,11 +9,30 @@ from loguru import logger
 
 from app.core.config import settings
 from app.db.database import Database, get_db
-from app.db.queries import get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions
+from app.db.queries import get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions, has_more_rows_than, iter_filtered_data
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams, ResponseFormat
 from app.models.clean_data import CLEANColumn, CLEANDataBase, CLEANECLookupResponse, CLEANECLookupMatch, CLEANSearchResponse, CLEANTypeaheadResponse, CurationStatusOption, CLEANCurationStatusResponse
 
 router = APIRouter(tags=["Search"])
+
+
+async def stream_csv(rows: AsyncIterator[Dict[str, Any]]) -> AsyncIterator[str]:
+    """Write rows as CSV, one chunk per row."""
+    output = StringIO()
+    writer = csv.DictWriter(
+        output, fieldnames=[c.value for c in CLEANColumn], extrasaction="ignore"
+    )
+    writer.writeheader()
+    async for row in rows:
+        # Join array columns into one ';'-separated cell
+        writer.writerow({
+            k: ";".join(str(v) for v in value) if isinstance(value, list) else value
+            for k, value in row.items()
+        })
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate()
+    yield output.getvalue()
 
 
 def parse_query_params(
@@ -114,8 +133,10 @@ metadata and CLEAN prediction confidence ranges.
 Filters that accept multiple values on the same parameter (e.g. `organism`) are combined
 with OR logic, while filters on different parameters are combined with AND logic.
 
-The response format can be either JSON (default) or CSV. Results are automatically
-paginated when no explicit `limit` is provided.
+The response format can be either JSON (default) or CSV. JSON results are automatically
+paginated when no explicit `limit` is provided. CSV results are not paginated: without a
+`limit`, every matching record is returned, up to `CSV_MAX_ROWS` (100,000 by default); a
+query that matches more is rejected with a 400.
 
 ### URL examples
 
@@ -204,41 +225,39 @@ else:
     """
 
     try:
-        # Apply default page size if no explicit limit provided
-        if params.limit is None:
-            params.limit = settings.AUTO_PAGINATION_THRESHOLD
-
-        # Get total count for the query (without pagination)
-        total_count = await get_total_count(db, params)
-
-        # Get data from database
-        data = await get_filtered_data(db, params)
-
-        # Handle response format
+        # CSV is not paginated: without an explicit limit, return every match up to the cap
         if params.format == ResponseFormat.CSV:
-            # Create CSV response
-            output = StringIO()
+            max_rows = settings.CSV_MAX_ROWS
+            if params.limit is None:
+                params.limit = max_rows
+                if await has_more_rows_than(db, params, max_rows):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Query matches more than {max_rows} records, the most a CSV "
+                        "response can contain. Narrow the filters, or page with limit and offset.",
+                    )
+            elif params.limit > max_rows:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"limit cannot exceed {max_rows} for CSV responses",
+                )
 
-            # Write CSV
-            writer = csv.DictWriter(
-                output, fieldnames=[c.value for c in CLEANColumn], extrasaction="ignore"
-            )
-            writer.writeheader()
-            for row in data:
-                # Join array columns into one ';'-separated cell
-                writer.writerow({
-                    k: ";".join(str(v) for v in value) if isinstance(value, list) else value
-                    for k, value in row.items()
-                })
-
-            # Return streaming response
-            output.seek(0)
             return StreamingResponse(
-                iter([output.getvalue()]),
+                stream_csv(iter_filtered_data(db, params)),
                 media_type="text/csv",
                 headers={"Content-Disposition": "attachment; filename=CLEAN_data.csv"},
             )
         else:
+            # Apply default page size if no explicit limit provided
+            if params.limit is None:
+                params.limit = settings.AUTO_PAGINATION_THRESHOLD
+
+            # Get total count for the query (without pagination)
+            total_count = await get_total_count(db, params)
+
+            # Get data from database
+            data = await get_filtered_data(db, params)
+
             response = CLEANSearchResponse(
                 total=total_count,
                 offset=params.offset,
@@ -311,6 +330,8 @@ else:
 
             return response
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting data: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving data: {str(e)}")
