@@ -337,17 +337,12 @@ else:
             if request:
                 base_url = str(request.url).split("?")[0]
 
-                # Prepare query parameters for pagination links
-                query_params = {
-                    k: v
-                    for k, v in params.model_dump().items()
-                    if k not in ["auto_paginated", "offset", "limit"]
-                    and v is not None
-                }
-
-                # Set format explicitly if it was provided
-                if params.format != ResponseFormat.JSON:
-                    query_params["format"] = params.format
+                # Repeat the caller's own query parameters, whose names differ from the
+                # model's field names (ec_number vs clean_ec_number, for example)
+                query_params = [
+                    (k, v) for k, v in request.query_params.multi_items()
+                    if k not in ("offset", "limit")
+                ]
 
                 current_offset = params.offset or 0
                 current_limit = params.limit
@@ -355,11 +350,10 @@ else:
                 # Next page link if there are more records
                 if current_offset + current_limit < total_count:
                     next_offset = current_offset + current_limit
-                    next_params = {
-                        **query_params,
-                        "offset": next_offset,
-                        "limit": current_limit,
-                    }
+                    next_params = query_params + [
+                        ("offset", next_offset),
+                        ("limit", current_limit),
+                    ]
                     response.next = (
                         f"{base_url}?{urlencode(next_params, doseq=True)}"
                     )
@@ -367,11 +361,10 @@ else:
                 # Previous page link if not on first page
                 if current_offset > 0:
                     prev_offset = max(0, current_offset - current_limit)
-                    prev_params = {
-                        **query_params,
-                        "offset": prev_offset,
-                        "limit": current_limit,
-                    }
+                    prev_params = query_params + [
+                        ("offset", prev_offset),
+                        ("limit", current_limit),
+                    ]
                     response.previous = (
                         f"{base_url}?{urlencode(prev_params, doseq=True)}"
                     )
