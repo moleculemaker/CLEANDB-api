@@ -61,9 +61,9 @@ def parse_query_params(
         default=ResponseFormat.JSON, description="Response format (json or csv)"
     ),
     limit: Optional[int] = Query(
-        None, description="Maximum number of records to return"
+        None, ge=0, description="Maximum number of records to return"
     ),
-    offset: Optional[int] = Query(0, description="Number of records to skip"),
+    offset: Optional[int] = Query(0, ge=0, description="Number of records to skip"),
     ordering: Optional[str] = Query(
         None,
         description="Column to sort by. Prefix with '-' for descending order. "
@@ -326,10 +326,10 @@ def parse_typeahead_params(
         description="Search term for typeahead suggestions (minimum 3 characters)"
     ),
     limit: Optional[int] = Query(
-        20, description="Maximum number of records to return"
+        20, ge=0, description="Maximum number of records to return"
     ),
     offset: Optional[int] = Query(
-        0, description="Number of records to skip"
+        0, ge=0, description="Number of records to skip"
     ),
     # Search context filters
     accession: Optional[List[str]] = Query(
