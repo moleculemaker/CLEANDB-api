@@ -231,7 +231,11 @@ else:
             )
             writer.writeheader()
             for row in data:
-                writer.writerow(row)
+                # Join array columns into one ';'-separated cell
+                writer.writerow({
+                    k: ";".join(str(v) for v in value) if isinstance(value, list) else value
+                    for k, value in row.items()
+                })
 
             # Return streaming response
             output.seek(0)
