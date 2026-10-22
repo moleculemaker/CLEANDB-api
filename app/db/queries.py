@@ -5,6 +5,9 @@ from app.db.database import Database
 from app.models.clean_data import CLEANColumn
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams
 
+# LIMIT and OFFSET are bigint in Postgres; larger values fail when the query runs.
+MAX_BIGINT = 2**63 - 1
+
 async def build_conditions(
     params: CLEANSearchQueryParams,
 ) -> Tuple[str, Dict[str, Any]]:
@@ -192,10 +195,12 @@ async def has_more_rows_than(db: Database, params: CLEANSearchQueryParams, n: in
     """Check whether more than n records match the filters, starting at params.offset."""
     where_clause, query_params = await build_conditions(params)
 
-    # Stops at the first row past n instead of counting every match
+    # Stops at the first row past n instead of counting every match. Clamped so OFFSET
+    # stays a bigint; no table has MAX_BIGINT rows, so the answer is still correct.
+    offset = min((params.offset or 0) + n, MAX_BIGINT)
     query = f"""SELECT EXISTS (
         {get_query("1", where_clause, include_order_by=False)}
-    OFFSET {(params.offset or 0) + n})"""
+    OFFSET {offset})"""
 
     return await db.fetchval(query, *query_params.values())
 

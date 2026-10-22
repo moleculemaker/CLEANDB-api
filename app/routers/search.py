@@ -10,14 +10,14 @@ from loguru import logger
 
 from app.core.config import settings
 from app.db.database import Database, get_db
-from app.db.queries import get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions, has_more_rows_than, iter_filtered_data
+from app.db.queries import MAX_BIGINT, get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions, has_more_rows_than, iter_filtered_data
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams, ResponseFormat
 from app.models.clean_data import CLEANColumn, CLEANDataBase, CLEANECLookupResponse, CLEANECLookupMatch, CLEANSearchResponse, CLEANTypeaheadResponse, CurationStatusOption, CLEANCurationStatusResponse
 
 router = APIRouter(tags=["Search"])
 
-# LIMIT and OFFSET are bigint in Postgres; larger values fail when the query runs.
-MAX_BIGINT = 2**63 - 1
+# Most records one /search response may contain, as an explicit limit or a whole CSV
+MAX_SEARCH_LIMIT = 100_000
 
 
 # CSV output stays in memory up to this size, then spills to a temp file on disk
@@ -96,7 +96,7 @@ def parse_query_params(
         default=ResponseFormat.JSON, description="Response format (json or csv)"
     ),
     limit: Optional[int] = Query(
-        None, ge=1, le=100000, description="Maximum number of records to return"
+        None, ge=1, le=MAX_SEARCH_LIMIT, description="Maximum number of records to return"
     ),
     offset: Optional[int] = Query(0, ge=0, le=MAX_BIGINT, description="Number of records to skip"),
     ordering: Optional[str] = Query(
@@ -151,8 +151,8 @@ with OR logic, while filters on different parameters are combined with AND logic
 
 The response format can be either JSON (default) or CSV. JSON results are automatically
 paginated when no explicit `limit` is provided. CSV results are not paginated: without a
-`limit`, every matching record is returned, up to `CSV_MAX_ROWS` (100,000 by default); a
-query that matches more is rejected with a 400.
+`limit`, every matching record is returned, up to 100,000; a query that matches more is
+rejected with a 400.
 
 ### URL examples
 
@@ -243,20 +243,14 @@ else:
     try:
         # CSV is not paginated: without an explicit limit, return every match up to the cap
         if params.format == ResponseFormat.CSV:
-            max_rows = settings.CSV_MAX_ROWS
             if params.limit is None:
-                params.limit = max_rows
-                if await has_more_rows_than(db, params, max_rows):
+                params.limit = MAX_SEARCH_LIMIT
+                if await has_more_rows_than(db, params, MAX_SEARCH_LIMIT):
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Query matches more than {max_rows} records, the most a CSV "
+                        detail=f"Query matches more than {MAX_SEARCH_LIMIT} records, the most a CSV "
                         "response can contain. Narrow the filters, or page with limit and offset.",
                     )
-            elif params.limit > max_rows:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"limit cannot exceed {max_rows} for CSV responses",
-                )
 
             csv_file = await write_csv(iter_filtered_data(db, params))
             return StreamingResponse(

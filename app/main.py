@@ -58,9 +58,8 @@ metadata with links to navigate to next and previous pages.
 This threshold can be configured using the `AUTO_PAGINATION_THRESHOLD` environment variable.
 
 CSV responses are not paginated. Without an explicit limit, a CSV search returns every matching
-record, up to {settings.CSV_MAX_ROWS}; a query that matches more is rejected with a 400 asking
-you to narrow the filters or page with `limit` and `offset`. This maximum can be configured using
-the `CSV_MAX_ROWS` environment variable.
+record, up to {search.MAX_SEARCH_LIMIT}; a query that matches more is rejected with a 400 asking
+you to narrow the filters or page with `limit` and `offset`.
 
 ## Data License
 
