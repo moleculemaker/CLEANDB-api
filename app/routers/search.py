@@ -1,8 +1,7 @@
 import csv
 from contextlib import aclosing
 from tempfile import SpooledTemporaryFile
-from typing import Any, AsyncIterator, Dict, Iterator, List, Literal, Optional
-from urllib.parse import urlencode
+from typing import Any, AsyncIterator, Dict, Iterator, List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -71,6 +70,24 @@ def read_chunks(file: SpooledTemporaryFile, size: int = 64 * 1024) -> Iterator[s
     """Read a file in chunks."""
     while chunk := file.read(size):
         yield chunk
+
+
+def page_links(request: Request, offset: int, limit: int, total: int) -> Tuple[Optional[str], Optional[str]]:
+    """Build next and previous links: the request's own URL with offset and limit replaced.
+
+    Reusing the request URL keeps every parameter under the name the caller sent.
+    """
+    next_url = None
+    if offset + limit < total:
+        next_url = str(request.url.include_query_params(offset=offset + limit, limit=limit))
+
+    previous_url = None
+    if offset > 0:
+        # Past the end, go back to the last page instead of another empty one
+        prev_offset = max(0, min(offset - limit, total - limit))
+        previous_url = str(request.url.include_query_params(offset=prev_offset, limit=limit))
+
+    return next_url, previous_url
 
 
 def parse_query_params(
@@ -335,39 +352,9 @@ else:
 
             # Add pagination links
             if request:
-                base_url = str(request.url).split("?")[0]
-
-                # Repeat the caller's own query parameters, whose names differ from the
-                # model's field names (ec_number vs clean_ec_number, for example)
-                query_params = [
-                    (k, v) for k, v in request.query_params.multi_items()
-                    if k not in ("offset", "limit")
-                ]
-
-                current_offset = params.offset or 0
-                current_limit = params.limit
-
-                # Next page link if there are more records
-                if current_offset + current_limit < total_count:
-                    next_offset = current_offset + current_limit
-                    next_params = query_params + [
-                        ("offset", next_offset),
-                        ("limit", current_limit),
-                    ]
-                    response.next = (
-                        f"{base_url}?{urlencode(next_params, doseq=True)}"
-                    )
-
-                # Previous page link if not on first page
-                if current_offset > 0:
-                    prev_offset = max(0, current_offset - current_limit)
-                    prev_params = query_params + [
-                        ("offset", prev_offset),
-                        ("limit", current_limit),
-                    ]
-                    response.previous = (
-                        f"{base_url}?{urlencode(prev_params, doseq=True)}"
-                    )
+                response.next, response.previous = page_links(
+                    request, params.offset or 0, params.limit, total_count
+                )
 
             return response
 
@@ -560,47 +547,7 @@ else:
         previous_url = None
 
         if request:
-            base_url = str(request.url).split("?")[0]
-
-            # Build base query params (excluding pagination)
-            base_params = {
-                "field_name": params.field_name,
-                "search": params.search,
-                "limit": limit,
-            }
-
-            # Add context params if present
-            if params.accession:
-                base_params["accession"] = params.accession
-            if params.organism:
-                base_params["organism"] = params.organism
-            if params.protein_name:
-                base_params["protein"] = params.protein_name
-            if params.gene_name:
-                base_params["gene_name"] = params.gene_name
-            if params.clean_ec_number:
-                base_params["ec_number"] = params.clean_ec_number
-            if params.uniprot_id:
-                base_params["uniprot"] = params.uniprot_id
-            if params.curation_status:
-                base_params["curation_status"] = params.curation_status
-            if params.clean_ec_confidence_min is not None:
-                base_params["clean_ec_confidence_min"] = params.clean_ec_confidence_min
-            if params.clean_ec_confidence_max is not None:
-                base_params["clean_ec_confidence_max"] = params.clean_ec_confidence_max
-            if params.sequence_length:
-                base_params["sequence_length"] = params.sequence_length
-
-            # Next page
-            if offset + limit < total:
-                next_params = {**base_params, "offset": offset + limit}
-                next_url = f"{base_url}?{urlencode(next_params, doseq=True)}"
-
-            # Previous page
-            if offset > 0:
-                prev_offset = max(0, offset - limit)
-                prev_params = {**base_params, "offset": prev_offset}
-                previous_url = f"{base_url}?{urlencode(prev_params, doseq=True)}"
+            next_url, previous_url = page_links(request, offset, limit, total)
 
         return CLEANTypeaheadResponse(
             field_name=params.field_name,
