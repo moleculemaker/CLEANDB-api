@@ -6,7 +6,6 @@ import pytest
 
 import app.routers.search as search
 from app.core.config import settings
-from app.db.queries import MAX_BIGINT
 from app.models.clean_data import CLEANColumn
 
 HEADER = [c.value for c in CLEANColumn]
@@ -18,19 +17,22 @@ def db_calls():
     class Calls:
         rows = []
         streamed_params = []
+        rows_closed = False
 
     async def iter_filtered_data(db, params):
         Calls.streamed_params.append(params.model_copy())
-        for row in Calls.rows:
-            yield row
+        try:
+            for row in Calls.rows:
+                yield row
+        finally:
+            Calls.rows_closed = True
 
     with (
         patch.object(search, "iter_filtered_data", iter_filtered_data),
-        patch.object(search, "has_more_rows_than", AsyncMock(return_value=False)) as more,
         patch.object(search, "get_total_count", AsyncMock()) as count,
         patch.object(search, "get_filtered_data", AsyncMock()) as fetch,
     ):
-        Calls.has_more_rows_than, Calls.get_total_count, Calls.get_filtered_data = more, count, fetch
+        Calls.get_total_count, Calls.get_filtered_data = count, fetch
         yield Calls
 
 
@@ -70,34 +72,38 @@ def test_csv_has_header_when_no_rows_match(client, db_calls):
     assert parse(get_csv(client)) == [HEADER]
 
 
-def test_csv_without_limit_returns_all_rows_up_to_cap(client, db_calls):
-    db_calls.rows = [make_row(accession=f"P{i:05d}") for i in range(settings.AUTO_PAGINATION_THRESHOLD + 1)]
+def test_csv_without_limit_returns_all_rows_up_to_cap(client, db_calls, monkeypatch):
+    monkeypatch.setattr(search, "MAX_SEARCH_LIMIT", 3)
+    db_calls.rows = [make_row(accession=f"P{i:05d}") for i in range(3)]
     rows = parse(get_csv(client, "offset=7"))
 
-    assert len(rows) == 1 + settings.AUTO_PAGINATION_THRESHOLD + 1
-    assert db_calls.streamed_params[0].limit == search.MAX_SEARCH_LIMIT
+    assert [r[3] for r in rows[1:]] == ["P00000", "P00001", "P00002"]
+    # One row past the cap is requested, so an oversized result can be detected
+    assert db_calls.streamed_params[0].limit == 4
     assert db_calls.streamed_params[0].offset == 7
-    db_calls.has_more_rows_than.assert_awaited_once()
-    assert db_calls.has_more_rows_than.await_args.args[2] == search.MAX_SEARCH_LIMIT
     db_calls.get_total_count.assert_not_awaited()
     db_calls.get_filtered_data.assert_not_awaited()
 
 
-def test_csv_without_limit_rejects_more_rows_than_cap(client, db_calls):
-    db_calls.has_more_rows_than.return_value = True
+def test_csv_without_limit_rejects_more_rows_than_cap(client, db_calls, monkeypatch):
+    monkeypatch.setattr(search, "MAX_SEARCH_LIMIT", 3)
+    db_calls.rows = [make_row() for _ in range(4)]
     response = get_csv(client)
 
     assert response.status_code == 400
-    assert f"more than {search.MAX_SEARCH_LIMIT} records" in response.json()["detail"]
-    assert db_calls.streamed_params == []
+    assert response.json()["detail"].startswith("Query matches more than 3 records")
+    # The row iterator, and so the DB cursor, is closed as soon as the cap is passed
+    assert db_calls.rows_closed
 
 
-def test_csv_with_limit_skips_cap_check(client, db_calls):
-    parse(get_csv(client, "limit=50&offset=100"))
+def test_csv_with_limit_is_not_capped(client, db_calls, monkeypatch):
+    monkeypatch.setattr(search, "MAX_SEARCH_LIMIT", 3)
+    db_calls.rows = [make_row() for _ in range(4)]
+    rows = parse(get_csv(client, "limit=50&offset=100"))
 
+    assert len(rows) == 5
     assert db_calls.streamed_params[0].limit == 50
     assert db_calls.streamed_params[0].offset == 100
-    db_calls.has_more_rows_than.assert_not_awaited()
 
 
 def test_csv_db_error_mid_result_returns_500(client):
@@ -105,10 +111,7 @@ def test_csv_db_error_mid_result_returns_500(client):
         yield make_row()
         raise RuntimeError("connection lost")
 
-    with (
-        patch.object(search, "iter_filtered_data", failing_rows),
-        patch.object(search, "has_more_rows_than", AsyncMock(return_value=False)),
-    ):
+    with patch.object(search, "iter_filtered_data", failing_rows):
         response = get_csv(client)
 
     assert response.status_code == 500
@@ -123,10 +126,44 @@ def test_csv_spills_large_output_to_disk(client, db_calls):
     assert all(len(dict(zip(HEADER, r))["protein_sequence"]) == 100_000 for r in rows[1:])
 
 
-async def test_cap_check_offset_stays_within_bigint(db):
-    from app.db.queries import has_more_rows_than
+async def test_closing_iter_filtered_data_closes_the_cursor(db):
+    from contextlib import aclosing
+
+    from app.db.queries import iter_filtered_data
     from app.models.query_params import CLEANSearchQueryParams
 
-    await has_more_rows_than(db, CLEANSearchQueryParams(offset=MAX_BIGINT - 1), search.MAX_SEARCH_LIMIT)
+    closed = []
 
-    assert db.fetchval.call_args.args[0].rstrip().endswith(f"OFFSET {MAX_BIGINT})")
+    async def iterate(query, *args):
+        try:
+            yield make_row()
+            yield make_row()
+        finally:
+            closed.append(True)
+
+    db.iterate = iterate
+    async with aclosing(iter_filtered_data(db, CLEANSearchQueryParams(limit=2))) as rows:
+        await anext(rows)
+
+    assert closed == [True]
+
+
+async def test_write_csv_closes_rows_when_over_cap():
+    from fastapi import HTTPException
+
+    closed = []
+
+    async def rows():
+        try:
+            for _ in range(5):
+                yield make_row()
+        finally:
+            closed.append(True)
+
+    # Holding a reference means only an explicit close, not garbage collection, can close it
+    generator = rows()
+    with pytest.raises(HTTPException) as error:
+        await search.write_csv(generator, max_rows=3)
+
+    assert error.value.status_code == 400
+    assert closed == [True]

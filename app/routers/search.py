@@ -1,4 +1,5 @@
 import csv
+from contextlib import aclosing
 from tempfile import SpooledTemporaryFile
 from typing import Any, AsyncIterator, Dict, Iterator, List, Literal, Optional
 from urllib.parse import urlencode
@@ -10,11 +11,14 @@ from loguru import logger
 
 from app.core.config import settings
 from app.db.database import Database, get_db
-from app.db.queries import MAX_BIGINT, get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions, has_more_rows_than, iter_filtered_data
+from app.db.queries import get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions, iter_filtered_data
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams, ResponseFormat
 from app.models.clean_data import CLEANColumn, CLEANDataBase, CLEANECLookupResponse, CLEANECLookupMatch, CLEANSearchResponse, CLEANTypeaheadResponse, CurationStatusOption, CLEANCurationStatusResponse
 
 router = APIRouter(tags=["Search"])
+
+# LIMIT and OFFSET are bigint in Postgres; larger values fail when the query runs.
+MAX_BIGINT = 2**63 - 1
 
 # Most records one /search response may contain, as an explicit limit or a whole CSV
 MAX_SEARCH_LIMIT = 100_000
@@ -24,23 +28,40 @@ MAX_SEARCH_LIMIT = 100_000
 CSV_SPOOL_MAX_MEMORY = 8 * 1024 * 1024
 
 
-async def write_csv(rows: AsyncIterator[Dict[str, Any]]) -> SpooledTemporaryFile:
+async def write_csv(
+    rows: AsyncIterator[Dict[str, Any]], max_rows: Optional[int] = None
+) -> SpooledTemporaryFile:
     """Write rows as CSV to a spooled temp file, rewound for reading.
 
     The whole result is written before the response starts, so the DB connection is
     released at the speed of the DB, not the speed of the client reading the response.
+    Raises a 400 if rows has more than max_rows rows.
     """
     output = SpooledTemporaryFile(max_size=CSV_SPOOL_MAX_MEMORY, mode="w+", newline="")
-    writer = csv.DictWriter(
-        output, fieldnames=[c.value for c in CLEANColumn], extrasaction="ignore"
-    )
-    writer.writeheader()
-    async for row in rows:
-        # Join array columns into one ';'-separated cell
-        writer.writerow({
-            k: ";".join(str(v) for v in value) if isinstance(value, list) else value
-            for k, value in row.items()
-        })
+    try:
+        writer = csv.DictWriter(
+            output, fieldnames=[c.value for c in CLEANColumn], extrasaction="ignore"
+        )
+        writer.writeheader()
+        # aclosing releases the DB connection now if we stop early, not at garbage collection
+        async with aclosing(rows):
+            count = 0
+            async for row in rows:
+                count += 1
+                if max_rows is not None and count > max_rows:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Query matches more than {max_rows} records, the most a CSV "
+                        "response can contain. Narrow the filters, or page with limit and offset.",
+                    )
+                # Join array columns into one ';'-separated cell
+                writer.writerow({
+                    k: ";".join(str(v) for v in value) if isinstance(value, list) else value
+                    for k, value in row.items()
+                })
+    except BaseException:
+        output.close()
+        raise
     output.seek(0)
     return output
 
@@ -244,15 +265,12 @@ else:
         # CSV is not paginated: without an explicit limit, return every match up to the cap
         if params.format == ResponseFormat.CSV:
             if params.limit is None:
-                params.limit = MAX_SEARCH_LIMIT
-                if await has_more_rows_than(db, params, MAX_SEARCH_LIMIT):
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Query matches more than {MAX_SEARCH_LIMIT} records, the most a CSV "
-                        "response can contain. Narrow the filters, or page with limit and offset.",
-                    )
-
-            csv_file = await write_csv(iter_filtered_data(db, params))
+                # Fetch one row past the cap, so a result that is too large is detected
+                # while writing instead of silently cut off
+                rows = iter_filtered_data(db, params.model_copy(update={"limit": MAX_SEARCH_LIMIT + 1}))
+                csv_file = await write_csv(rows, max_rows=MAX_SEARCH_LIMIT)
+            else:
+                csv_file = await write_csv(iter_filtered_data(db, params))
             return StreamingResponse(
                 read_chunks(csv_file),
                 media_type="text/csv",

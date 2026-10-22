@@ -1,12 +1,10 @@
+from contextlib import aclosing
 from typing import Any, AsyncIterator, Dict, List, Tuple
 
 import re
 from app.db.database import Database
 from app.models.clean_data import CLEANColumn
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams
-
-# LIMIT and OFFSET are bigint in Postgres; larger values fail when the query runs.
-MAX_BIGINT = 2**63 - 1
 
 async def build_conditions(
     params: CLEANSearchQueryParams,
@@ -187,22 +185,10 @@ async def iter_filtered_data(
 ) -> AsyncIterator[Dict[str, Any]]:
     """Stream filtered data from the database."""
     query, query_args = await build_data_query(params)
-    async for record in db.iterate(query, *query_args):
-        yield record
-
-
-async def has_more_rows_than(db: Database, params: CLEANSearchQueryParams, n: int) -> bool:
-    """Check whether more than n records match the filters, starting at params.offset."""
-    where_clause, query_params = await build_conditions(params)
-
-    # Stops at the first row past n instead of counting every match. Clamped so OFFSET
-    # stays a bigint; no table has MAX_BIGINT rows, so the answer is still correct.
-    offset = min((params.offset or 0) + n, MAX_BIGINT)
-    query = f"""SELECT EXISTS (
-        {get_query("1", where_clause, include_order_by=False)}
-    OFFSET {offset})"""
-
-    return await db.fetchval(query, *query_params.values())
+    # Closing this generator early closes the cursor too, releasing its connection
+    async with aclosing(db.iterate(query, *query_args)) as records:
+        async for record in records:
+            yield record
 
 
 async def get_total_count(db: Database, params: CLEANSearchQueryParams) -> int:
