@@ -2,22 +2,10 @@ import csv
 from io import StringIO
 from unittest.mock import AsyncMock, patch
 
-import pytest
-from fastapi.testclient import TestClient
-
 import app.routers.search as search
-from app.db.database import get_db
-from app.main import app
 from app.models.clean_data import CLEANColumn
 
 HEADER = [c.value for c in CLEANColumn]
-
-
-@pytest.fixture
-def client():
-    app.dependency_overrides[get_db] = lambda: None
-    yield TestClient(app)
-    app.dependency_overrides.clear()
 
 
 def get_csv(client, rows):
