@@ -16,6 +16,9 @@ from app.models.clean_data import CLEANColumn, CLEANDataBase, CLEANECLookupRespo
 
 router = APIRouter(tags=["Search"])
 
+# LIMIT and OFFSET are bigint in Postgres; larger values fail when the query runs.
+MAX_BIGINT = 2**63 - 1
+
 
 # CSV output stays in memory up to this size, then spills to a temp file on disk
 CSV_SPOOL_MAX_MEMORY = 8 * 1024 * 1024
@@ -93,9 +96,9 @@ def parse_query_params(
         default=ResponseFormat.JSON, description="Response format (json or csv)"
     ),
     limit: Optional[int] = Query(
-        None, description="Maximum number of records to return"
+        None, ge=1, le=100000, description="Maximum number of records to return"
     ),
-    offset: Optional[int] = Query(0, description="Number of records to skip"),
+    offset: Optional[int] = Query(0, ge=0, le=MAX_BIGINT, description="Number of records to skip"),
     ordering: Optional[str] = Query(
         None,
         description="Column to sort by. Prefix with '-' for descending order. "
@@ -363,10 +366,10 @@ def parse_typeahead_params(
         description="Search term for typeahead suggestions (minimum 3 characters)"
     ),
     limit: Optional[int] = Query(
-        20, description="Maximum number of records to return"
+        20, ge=1, le=100, description="Maximum number of records to return"
     ),
     offset: Optional[int] = Query(
-        0, description="Number of records to skip"
+        0, ge=0, le=MAX_BIGINT, description="Number of records to skip"
     ),
     # Search context filters
     accession: Optional[List[str]] = Query(

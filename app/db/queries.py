@@ -1,6 +1,5 @@
 from typing import Any, AsyncIterator, Dict, List, Tuple
 
-import rich
 import re
 from app.db.database import Database
 from app.models.clean_data import CLEANColumn
@@ -24,7 +23,6 @@ async def build_conditions(
     }
 
     for column, values in string_columns.items():
-        rich.print(f"Processing column: {column} with values: {values}")
         if values:
             column_conditions = []
 
@@ -169,7 +167,6 @@ async def build_data_query(params: CLEANSearchQueryParams) -> Tuple[str, List[An
     if params.offset is not None:
         query += f" OFFSET {params.offset}"
 
-    rich.print(f"{query=}")
     # Extract query parameters from the dictionary
     return query, list(query_params.values())
 
