@@ -220,9 +220,7 @@ else:
             output = StringIO()
 
             # Determine columns to include in CSV
-            if params.columns:
-                fieldnames = params.columns
-            elif data and len(data) > 0:
+            if data and len(data) > 0:
                 fieldnames = list(data[0].keys())
             else:
                 fieldnames = []
