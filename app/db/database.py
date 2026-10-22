@@ -6,18 +6,6 @@ from loguru import logger
 from app.core.config import settings
 
 
-async def get_connection() -> asyncpg.Connection:
-    """Get a database connection."""
-    conn = await asyncpg.connect(
-        user=settings.CLEAN_DB_USER,
-        password=settings.CLEAN_DB_PASSWORD,
-        host=settings.CLEAN_DB_HOST,
-        port=settings.CLEAN_DB_PORT,
-        database=settings.CLEAN_DB_NAME,
-    )
-    return conn
-
-
 async def get_connection_pool() -> asyncpg.Pool:
     """Get a database connection pool."""
     pool = await asyncpg.create_pool(
