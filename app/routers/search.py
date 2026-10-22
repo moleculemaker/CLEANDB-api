@@ -1,15 +1,18 @@
 import csv
-from io import StringIO
-from typing import Any, List, Literal, Optional
+from contextlib import aclosing
+from tempfile import SpooledTemporaryFile
+from typing import Any, AsyncIterator, Dict, Iterator, List, Literal, Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 from loguru import logger
 
 from app.core.config import settings
 from app.db.database import Database, get_db
-from app.db.queries import get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions
+from app.db.queries import get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions, iter_filtered_data
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams, ResponseFormat
 from app.models.clean_data import CLEANColumn, CLEANDataBase, CLEANECLookupResponse, CLEANECLookupMatch, CLEANSearchResponse, CLEANTypeaheadResponse, CurationStatusOption, CLEANCurationStatusResponse
 
@@ -17,6 +20,57 @@ router = APIRouter(tags=["Search"])
 
 # LIMIT and OFFSET are bigint in Postgres; larger values fail when the query runs.
 MAX_BIGINT = 2**63 - 1
+
+# Most records one /search response may contain, as an explicit limit or a whole CSV
+MAX_SEARCH_LIMIT = 100_000
+
+
+# CSV output stays in memory up to this size, then spills to a temp file on disk
+CSV_SPOOL_MAX_MEMORY = 8 * 1024 * 1024
+
+
+async def write_csv(
+    rows: AsyncIterator[Dict[str, Any]], max_rows: Optional[int] = None
+) -> SpooledTemporaryFile:
+    """Write rows as CSV to a spooled temp file, rewound for reading.
+
+    The whole result is written before the response starts, so the DB connection is
+    released at the speed of the DB, not the speed of the client reading the response.
+    Raises a 400 if rows has more than max_rows rows.
+    """
+    output = SpooledTemporaryFile(max_size=CSV_SPOOL_MAX_MEMORY, mode="w+", newline="")
+    try:
+        writer = csv.DictWriter(
+            output, fieldnames=[c.value for c in CLEANColumn], extrasaction="ignore"
+        )
+        writer.writeheader()
+        # aclosing releases the DB connection now if we stop early, not at garbage collection
+        async with aclosing(rows):
+            count = 0
+            async for row in rows:
+                count += 1
+                if max_rows is not None and count > max_rows:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Query matches more than {max_rows} records, the most a CSV "
+                        "response can contain. Narrow the filters, or page with limit and offset.",
+                    )
+                # Join array columns into one ';'-separated cell
+                writer.writerow({
+                    k: ";".join(str(v) for v in value) if isinstance(value, list) else value
+                    for k, value in row.items()
+                })
+    except BaseException:
+        output.close()
+        raise
+    output.seek(0)
+    return output
+
+
+def read_chunks(file: SpooledTemporaryFile, size: int = 64 * 1024) -> Iterator[str]:
+    """Read a file in chunks."""
+    while chunk := file.read(size):
+        yield chunk
 
 
 def parse_query_params(
@@ -64,7 +118,9 @@ def parse_query_params(
         default=ResponseFormat.JSON, description="Response format (json or csv)"
     ),
     limit: Optional[int] = Query(
-        None, ge=1, le=100000, description="Maximum number of records to return"
+        None, ge=1, le=MAX_SEARCH_LIMIT,
+        description="Maximum number of records to return "
+        f"(at most {settings.AUTO_PAGINATION_THRESHOLD} for JSON, {MAX_SEARCH_LIMIT} for CSV)"
     ),
     offset: Optional[int] = Query(0, ge=0, le=MAX_BIGINT, description="Number of records to skip"),
     ordering: Optional[str] = Query(
@@ -74,6 +130,19 @@ def parse_query_params(
     ),
 ) -> CLEANSearchQueryParams:
     """Parse and validate query parameters."""
+    # JSON is paginated, so a JSON page is never larger than the default page size.
+    # Shaped like the le= error on limit, so both caps fail the same way.
+    max_json_limit = settings.AUTO_PAGINATION_THRESHOLD
+    if format == ResponseFormat.JSON and limit is not None and limit > max_json_limit:
+        raise RequestValidationError([{
+            "type": "less_than_equal",
+            "loc": ("query", "limit"),
+            "msg": f"Input should be less than or equal to {max_json_limit} for JSON responses; "
+            "page with offset, or use format=csv",
+            "input": str(limit),
+            "ctx": {"le": max_json_limit},
+        }])
+
     try:
         # Validate format
         if format not in [fmt for fmt in ResponseFormat]:
@@ -117,8 +186,11 @@ metadata and CLEAN prediction confidence ranges.
 Filters that accept multiple values on the same parameter (e.g. `organism`) are combined
 with OR logic, while filters on different parameters are combined with AND logic.
 
-The response format can be either JSON (default) or CSV. Results are automatically
-paginated when no explicit `limit` is provided.
+The response format can be either JSON (default) or CSV. JSON results are automatically
+paginated when no explicit `limit` is provided, and an explicit JSON `limit` can be no larger
+than that page size (`AUTO_PAGINATION_THRESHOLD`, 5,000 by default). CSV results are not
+paginated: without a `limit`, every matching record is returned, up to 100,000; a query that
+matches more is rejected with a 400.
 
 ### URL examples
 
@@ -207,41 +279,33 @@ else:
     """
 
     try:
-        # Apply default page size if no explicit limit provided
-        if params.limit is None:
-            params.limit = settings.AUTO_PAGINATION_THRESHOLD
-
-        # Get total count for the query (without pagination)
-        total_count = await get_total_count(db, params)
-
-        # Get data from database
-        data = await get_filtered_data(db, params)
-
-        # Handle response format
+        # CSV is not paginated: without an explicit limit, return every match up to the cap
         if params.format == ResponseFormat.CSV:
-            # Create CSV response
-            output = StringIO()
-
-            # Write CSV
-            writer = csv.DictWriter(
-                output, fieldnames=[c.value for c in CLEANColumn], extrasaction="ignore"
-            )
-            writer.writeheader()
-            for row in data:
-                # Join array columns into one ';'-separated cell
-                writer.writerow({
-                    k: ";".join(str(v) for v in value) if isinstance(value, list) else value
-                    for k, value in row.items()
-                })
-
-            # Return streaming response
-            output.seek(0)
+            if params.limit is None:
+                # Fetch one row past the cap, so a result that is too large is detected
+                # while writing instead of silently cut off
+                rows = iter_filtered_data(db, params.model_copy(update={"limit": MAX_SEARCH_LIMIT + 1}))
+                csv_file = await write_csv(rows, max_rows=MAX_SEARCH_LIMIT)
+            else:
+                csv_file = await write_csv(iter_filtered_data(db, params))
             return StreamingResponse(
-                iter([output.getvalue()]),
+                read_chunks(csv_file),
                 media_type="text/csv",
                 headers={"Content-Disposition": "attachment; filename=CLEAN_data.csv"},
+                # Runs after the response ends, including when the client disconnects
+                background=BackgroundTask(csv_file.close),
             )
         else:
+            # Apply default page size if no explicit limit provided
+            if params.limit is None:
+                params.limit = settings.AUTO_PAGINATION_THRESHOLD
+
+            # Get total count for the query (without pagination)
+            total_count = await get_total_count(db, params)
+
+            # Get data from database
+            data = await get_filtered_data(db, params)
+
             response = CLEANSearchResponse(
                 total=total_count,
                 offset=params.offset,
@@ -314,6 +378,8 @@ else:
 
             return response
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting data: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving data: {str(e)}")

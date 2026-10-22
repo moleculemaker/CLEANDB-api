@@ -10,6 +10,7 @@ REJECTED = [
     (SEARCH, "limit", -1),
     (SEARCH, "limit", 0),
     (SEARCH, "limit", 100001),
+    (SEARCH, "limit", 5001),  # JSON cap; CSV allows up to 100000
     (SEARCH, "offset", -5),
     (SEARCH, "offset", TOO_BIG),
     (TYPEAHEAD, "limit", -1),
@@ -20,7 +21,7 @@ REJECTED = [
 ]
 
 ACCEPTED = [
-    (SEARCH, "limit", 100000),
+    (SEARCH, "limit", 5000),
     (SEARCH, "offset", TOO_BIG - 1),
     (TYPEAHEAD, "limit", 100),
     (TYPEAHEAD, "offset", TOO_BIG - 1),

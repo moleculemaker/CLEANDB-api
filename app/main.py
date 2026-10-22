@@ -53,9 +53,14 @@ including:
 When a query would return more than {settings.AUTO_PAGINATION_THRESHOLD} records and no explicit
 limit is provided, the API will automatically paginate results to return
 {settings.AUTO_PAGINATION_THRESHOLD} records at a time. The response will include pagination
-metadata with links to navigate to next and previous pages.
+metadata with links to navigate to next and previous pages. An explicit JSON `limit` can be at
+most {settings.AUTO_PAGINATION_THRESHOLD}.
 
 This threshold can be configured using the `AUTO_PAGINATION_THRESHOLD` environment variable.
+
+CSV responses are not paginated. Without an explicit limit, a CSV search returns every matching
+record, up to {search.MAX_SEARCH_LIMIT}; a query that matches more is rejected with a 400 asking
+you to narrow the filters or page with `limit` and `offset`.
 
 ## Data License
 
