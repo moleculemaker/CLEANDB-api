@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.db.database import Database, get_db
 from app.db.queries import get_ec_suggestions, get_filtered_data, get_total_count, get_typeahead_suggestions
 from app.models.query_params import CLEANECLookupQueryParams, CLEANSearchQueryParams, CLEANTypeaheadQueryParams, ResponseFormat
-from app.models.clean_data import CLEANDataBase, CLEANECLookupResponse, CLEANECLookupMatch, CLEANSearchResponse, CLEANTypeaheadResponse, CurationStatusOption, CLEANCurationStatusResponse
+from app.models.clean_data import CLEANColumn, CLEANDataBase, CLEANECLookupResponse, CLEANECLookupMatch, CLEANSearchResponse, CLEANTypeaheadResponse, CurationStatusOption, CLEANCurationStatusResponse
 
 router = APIRouter(tags=["Search"])
 
@@ -219,21 +219,17 @@ else:
             # Create CSV response
             output = StringIO()
 
-            # Determine columns to include in CSV
-            if params.columns:
-                fieldnames = params.columns
-            elif data and len(data) > 0:
-                fieldnames = list(data[0].keys())
-            else:
-                fieldnames = []
-
             # Write CSV
             writer = csv.DictWriter(
-                output, fieldnames=fieldnames, extrasaction="ignore"
+                output, fieldnames=[c.value for c in CLEANColumn], extrasaction="ignore"
             )
             writer.writeheader()
             for row in data:
-                writer.writerow(row)
+                # Join array columns into one ';'-separated cell
+                writer.writerow({
+                    k: ";".join(str(v) for v in value) if isinstance(value, list) else value
+                    for k, value in row.items()
+                })
 
             # Return streaming response
             output.seek(0)
