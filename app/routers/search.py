@@ -1,10 +1,11 @@
 import csv
-from io import StringIO
-from typing import Any, AsyncIterator, Dict, List, Literal, Optional
+from tempfile import SpooledTemporaryFile
+from typing import Any, AsyncIterator, Dict, Iterator, List, Literal, Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 from loguru import logger
 
 from app.core.config import settings
@@ -16,9 +17,17 @@ from app.models.clean_data import CLEANColumn, CLEANDataBase, CLEANECLookupRespo
 router = APIRouter(tags=["Search"])
 
 
-async def stream_csv(rows: AsyncIterator[Dict[str, Any]]) -> AsyncIterator[str]:
-    """Write rows as CSV, one chunk per row."""
-    output = StringIO()
+# CSV output stays in memory up to this size, then spills to a temp file on disk
+CSV_SPOOL_MAX_MEMORY = 8 * 1024 * 1024
+
+
+async def write_csv(rows: AsyncIterator[Dict[str, Any]]) -> SpooledTemporaryFile:
+    """Write rows as CSV to a spooled temp file, rewound for reading.
+
+    The whole result is written before the response starts, so the DB connection is
+    released at the speed of the DB, not the speed of the client reading the response.
+    """
+    output = SpooledTemporaryFile(max_size=CSV_SPOOL_MAX_MEMORY, mode="w+", newline="")
     writer = csv.DictWriter(
         output, fieldnames=[c.value for c in CLEANColumn], extrasaction="ignore"
     )
@@ -29,10 +38,14 @@ async def stream_csv(rows: AsyncIterator[Dict[str, Any]]) -> AsyncIterator[str]:
             k: ";".join(str(v) for v in value) if isinstance(value, list) else value
             for k, value in row.items()
         })
-        yield output.getvalue()
-        output.seek(0)
-        output.truncate()
-    yield output.getvalue()
+    output.seek(0)
+    return output
+
+
+def read_chunks(file: SpooledTemporaryFile, size: int = 64 * 1024) -> Iterator[str]:
+    """Read a file in chunks."""
+    while chunk := file.read(size):
+        yield chunk
 
 
 def parse_query_params(
@@ -242,10 +255,13 @@ else:
                     detail=f"limit cannot exceed {max_rows} for CSV responses",
                 )
 
+            csv_file = await write_csv(iter_filtered_data(db, params))
             return StreamingResponse(
-                stream_csv(iter_filtered_data(db, params)),
+                read_chunks(csv_file),
                 media_type="text/csv",
                 headers={"Content-Disposition": "attachment; filename=CLEAN_data.csv"},
+                # Runs after the response ends, including when the client disconnects
+                background=BackgroundTask(csv_file.close),
             )
         else:
             # Apply default page size if no explicit limit provided

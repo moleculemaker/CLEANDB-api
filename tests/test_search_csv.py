@@ -109,6 +109,29 @@ def test_csv_with_limit_skips_cap_check(client, db_calls):
     db_calls.has_more_rows_than.assert_not_awaited()
 
 
+def test_csv_db_error_mid_result_returns_500(client):
+    async def failing_rows(db, params):
+        yield make_row()
+        raise RuntimeError("connection lost")
+
+    with (
+        patch.object(search, "iter_filtered_data", failing_rows),
+        patch.object(search, "has_more_rows_than", AsyncMock(return_value=False)),
+    ):
+        response = get_csv(client)
+
+    assert response.status_code == 500
+    assert "connection lost" in response.json()["detail"]
+
+
+def test_csv_spills_large_output_to_disk(client, db_calls):
+    db_calls.rows = [make_row(protein_sequence="M" * 100_000) for _ in range(100)]
+    rows = parse(get_csv(client))
+
+    assert len(rows) == 101
+    assert all(len(dict(zip(HEADER, r))["protein_sequence"]) == 100_000 for r in rows[1:])
+
+
 def test_csv_rejects_limit_above_cap(client, db_calls):
     response = get_csv(client, f"limit={settings.CSV_MAX_ROWS + 1}")
 
