@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.core.config import settings
+from app.core.matomo import MatomoTrackingMiddleware
 from app.db.database import _db
 from app.routers import search
 
@@ -99,6 +100,9 @@ app.add_middleware(
 
 # Add GZip compression middleware to compress large responses
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Record API usage in Matomo
+app.add_middleware(MatomoTrackingMiddleware)
 
 # Include API routers
 app.include_router(search.router, prefix="/api/v1")
