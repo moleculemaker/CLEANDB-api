@@ -32,9 +32,5 @@ RUN uv sync
 # Expose port
 EXPOSE 8000
 
-# Trust X-Forwarded-* from the ingress so generated URLs use https (mmli2 pod network;
-# override for other clusters). Not "*", which would take a client-supplied X-Forwarded-For
-ENV FORWARDED_ALLOW_IPS="10.42.0.0/16"
-
 # Run uvicorn through uv
 CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
