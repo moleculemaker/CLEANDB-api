@@ -29,6 +29,9 @@ controller:
     pullPolicy: Always
     #pullSecrets: []
 
+  # Additional environment variables for the container, as a list of {name, value}
+  extraEnv: []
+
   # TODO: parameterize labels, tolerations, nodeSelector, resources, etc?
 
 
