@@ -1,6 +1,6 @@
-from typing import List
+from typing import List, Optional
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -15,6 +15,18 @@ class Settings(BaseSettings):
 
     # CORS configuration
     CORS_ORIGINS: List[str] = ["*"]
+
+    # Matomo usage tracking; disabled unless MATOMO_SITE_ID is set
+    MATOMO_URL: str = "https://matomo.mmli2.ncsa.illinois.edu"
+    MATOMO_SITE_ID: Optional[int] = None
+    # Token of a user with write access to the site; lets Matomo record the caller's IP
+    MATOMO_TOKEN: Optional[str] = None
+
+    @field_validator("MATOMO_SITE_ID", "MATOMO_TOKEN", mode="before")
+    @classmethod
+    def empty_is_unset(cls, value):
+        """Treat MATOMO_SITE_ID= (as in .env.example) as unset instead of failing to start."""
+        return None if value == "" else value
 
     # Database configuration
     CLEAN_DB_USER: str

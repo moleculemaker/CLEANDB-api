@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+from app.core import matomo
 from app.core.config import settings
 from app.db.database import _db
 from app.routers import search
@@ -14,9 +15,11 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for database connection handling."""
     # Connect to database on startup
     await _db.connect()
+    matomo.start()
     yield
     # Disconnect from database on shutdown
     await _db.disconnect()
+    await matomo.stop()
 
 
 # Initialize FastAPI application
@@ -99,6 +102,9 @@ app.add_middleware(
 
 # Add GZip compression middleware to compress large responses
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Record API usage in Matomo
+app.add_middleware(matomo.MatomoTrackingMiddleware)
 
 # Include API routers
 app.include_router(search.router, prefix="/api/v1")
